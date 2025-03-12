@@ -35,6 +35,10 @@ struct PlayerBombsText;
 struct PlayerPowersText;
 #[derive(Component)]
 struct PlayerPointsText;
+#[derive(Component)]
+struct PowerItem;
+#[derive(Component)]
+struct PointItem;
 
 #[derive(Resource)]
 struct AsciiFont(Handle<Font>);
@@ -89,7 +93,7 @@ fn linear_movement(
     }
 }
 
-fn single_shot(
+fn single_shoot(
     mut commands: Commands,
     mut query: Query<(&Transform, &mut SingleShot)>,
     time: Res<Time>,
@@ -202,8 +206,9 @@ fn spawn_enemies(
 fn bullet_hit_enemy(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
-    mut enemies: Query<(Entity, &mut Health), With<Enemy>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
     bullets: Query<Entity, With<PlayerBullet>>,
+    font: Res<AsciiFont>,
 ) {
     for event in collision_events.read() {
         match event {
@@ -217,9 +222,63 @@ fn bullet_hit_enemy(
                     continue;
                 };
 
-                if let Ok((enemy_ent, mut health)) = enemies.get_mut(enemy_entity) {
+                if let Ok((enemy_ent, mut health, transform)) = enemies.get_mut(enemy_entity) {
                     health.0 -= 1;
                     if health.0 <= 0 {
+
+                        let power_count = rand::random::<u32>() % 3 + 1;
+                        const ITEM_SPEED: f32 = 50.0;
+
+                        for _ in 0..power_count {
+
+                            commands.spawn((
+                                PowerItem,
+
+                                Transform::from_translation(transform.translation),
+                                Text2d::new("P"),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 30.0,
+                                    ..default()
+                                },
+                                TextLayout::default(),
+                                TextColor(Color::Srgba(RED)),
+
+                                Collider::ball(5.0),
+                                RigidBody::KinematicVelocityBased,
+                                Velocity::linear(Vec2::new(
+                                    (rand::random::<f32>() - 0.5) * ITEM_SPEED,
+                                    150.0 + rand::random::<f32>() * 50.0
+                                )),
+                                ActiveEvents::COLLISION_EVENTS,
+                                CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
+                            ));
+                        }
+
+                        let point_count = rand::random::<u32>() % 3 + 1;
+                        for _ in 0..point_count {
+                            commands.spawn((
+                                PointItem,
+                                Text2d::new("%"),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 30.0,
+                                    ..default()
+                                },
+                                TextLayout::default(),
+                                TextColor(Color::Srgba(BLUE)),
+                                Transform::from_translation(transform.translation),
+                                RigidBody::KinematicVelocityBased,
+                                Collider::ball(5.0),
+                                Velocity::linear(Vec2::new(
+                                    (rand::random::<f32>() - 0.5) * ITEM_SPEED,
+                                    150.0 + rand::random::<f32>() * 50.0
+                                )),
+                                CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
+                                ActiveEvents::COLLISION_EVENTS,
+                            ));
+                        }
+
                         commands.entity(enemy_ent).despawn();
                     }
                 }
@@ -275,18 +334,27 @@ fn tick_cooldown_timer(
     }
 }
 
-fn despawn_bullets(
+fn despawn_bullets_and_items(
     mut commands: Commands,
-    bullet_query: Query<(Entity, &Transform), Or<(With<PlayerBullet>, With<EnemyBullet>)>>,
+    query: Query<
+        (Entity, &Transform),
+        Or<(
+            With<PlayerBullet>,
+            With<EnemyBullet>,
+            With<PowerItem>,
+            With<PointItem>
+        )>
+    >,
     window: Res<WindowSize>,
 ) {
-    for (entity, transform) in bullet_query.iter() {
+    for (entity, transform) in query.iter() {
         let pos = transform.translation;
         if pos.x.abs() > window.width / 2.0 || pos.y.abs() > window.height / 2.0 {
             commands.entity(entity).despawn();
         }
     }
 }
+
 fn despawn_enemies(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Transform), With<Enemy>>,
@@ -451,7 +519,7 @@ fn setup(
         Velocity::zero(),
 
         ActiveEvents::COLLISION_EVENTS,
-        CollisionGroups::new(Group::GROUP_1, Group::GROUP_4 | Group::GROUP_8)
+        CollisionGroups::new(Group::GROUP_1, Group::GROUP_4 | Group::GROUP_6 | Group::GROUP_8)
     ));
 
     let width = 1280.0;
@@ -580,13 +648,13 @@ fn main() {
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit_enemy)
         .add_systems(Update, bullet_hit_player)
-        .add_systems(Update, single_shot)
+        .add_systems(Update, single_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
         .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyJ)))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
         .add_systems(FixedUpdate, tick_cooldown_timer)
-        .add_systems(FixedUpdate, despawn_bullets)
+        .add_systems(FixedUpdate, despawn_bullets_and_items)
         .add_systems(FixedUpdate, despawn_enemies)
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(

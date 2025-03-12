@@ -127,7 +127,7 @@ fn linear_movement(
     }
 }
 
-fn homing_bullet(
+fn player_homing_bullet(
     mut query: Query<(&mut Velocity, &Transform, &PlayerHomingBullet)>,
     enemies: Query<&Transform, With<Enemy>>,
     time: Res<Time>,
@@ -145,13 +145,17 @@ fn homing_bullet(
             let desired_dir = (target.translation.truncate() - bullet_transform.translation.truncate())
                 .normalize_or_zero();
 
-            let lerped_dir = current_dir.lerp(desired_dir, homing.rotate_speed * time.delta_secs())
-                .normalize_or_zero();
+            let angle_between = current_dir.angle_to(desired_dir);
+            let max_rotate = homing.rotate_speed * time.delta_secs();
 
-            velocity.linvel = lerped_dir * homing.speed;
+            let clamped_angle = angle_between.clamp(-max_rotate, max_rotate);
+            let new_dir = current_dir.rotate(Vec2::from_angle(clamped_angle));
+
+            velocity.linvel = new_dir.normalize_or_zero() * homing.speed;
         }
     }
 }
+
 
 fn support_homing_shoot(
     mut commands: Commands,
@@ -258,8 +262,8 @@ fn spawn_support_units(
             commands.spawn((
                 SupportUnit,
                 SupportHomingShoot {
-                    speed: 400.0,
-                    rotate_speed: 0.5,
+                    speed: 800.0,
+                    rotate_speed: 1.0,
                     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating)
                 },
                 Text2d::new("N"),
@@ -634,7 +638,7 @@ fn player_shoot(
 ) {
     for (transform, mut cooldown) in query.iter_mut() {
         if cooldown.0.finished() {
-            const BULLET_SPEED: f32 = 400.0;
+            const BULLET_SPEED: f32 = 800.0;
             const  BASE_DIRECTION: Vec2 = Vec2::Y;
 
             let (num_bullets, angle_step_deg) = if powers.0 > 50 {
@@ -929,7 +933,7 @@ fn main() {
         .add_systems(FixedUpdate, despawn_enemies)
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(FixedUpdate, item_gravity)
-        .add_systems(FixedUpdate, homing_bullet)
+        .add_systems(FixedUpdate, player_homing_bullet)
         .add_systems(
             RunFixedMainLoop,
             (

@@ -23,7 +23,7 @@ struct Health(i32);
 #[derive(Component)]
 struct LinearMovement(Vec2);
 #[derive(Component)]
-struct SingleShot {
+struct SingleShoot {
     direction: Vec2,
     cooldown: Timer,
 }
@@ -115,7 +115,7 @@ fn linear_movement(
 
 fn single_shoot(
     mut commands: Commands,
-    mut query: Query<(&Transform, &mut SingleShot)>,
+    mut query: Query<(&Transform, &mut SingleShoot)>,
     time: Res<Time>,
     font: Res<AsciiFont>,
 ) {
@@ -163,6 +163,7 @@ fn spawn_enemies(
     const MAX_ENEMIES: usize = 10;
     const SPAWN_CHANCE: f32 = 0.5;
     const MAX_DEVIATION_DEG: f32 = 30.0;
+    const MAX_SHOOT_DEVIATION_DEG: f32 = 10.0;
 
     if enemy_query.iter().count() >= MAX_ENEMIES {
         return;
@@ -181,16 +182,13 @@ fn spawn_enemies(
 
             let spawn_pos = Vec2::new(spawn_x, spawn_y);
             let angle = (rand::random::<f32>() * 2.0 - 1.0) * MAX_DEVIATION_DEG.to_radians();
-            let cos = angle.cos();
-            let sin = angle.sin();
-            let direction = player_pos - spawn_pos;
-            let direction = Vec2::new(
-                direction.x * cos - direction.y * sin,
-                direction.x * sin + direction.y * cos,
-            );
+            let direction = (player_pos - spawn_pos).rotate(Vec2::from_angle(angle));
 
             let speed = rand::random::<f32>() * 100.0 + 100.0;
             let movement_vec = direction.normalize_or_zero() * speed;
+
+            let shoot_angle = (rand::random::<f32>() * 2.0 - 1.0) * MAX_SHOOT_DEVIATION_DEG.to_radians();
+            let shoot_direction = (player_pos - spawn_pos).rotate(Vec2::from_angle(shoot_angle)).normalize_or_zero() * speed;
 
             commands.spawn((
                 Text2d::new("&"),
@@ -212,10 +210,10 @@ fn spawn_enemies(
 
                 Transform::from_translation(spawn_pos.extend(0.0)),
                 LinearMovement(movement_vec),
-                Health(5),
+                Health((rand::random::<u32>() % 3 + 1) as i32),
 
-                SingleShot {
-                    direction: movement_vec * (rand::random::<f32>() * 2.0 + 2.0),
+                SingleShoot {
+                    direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
                 }
             ));
@@ -288,7 +286,7 @@ fn bullet_hit_enemy(
                                 TextLayout::default(),
                                 TextColor(Color::Srgba(RED)),
 
-                                Collider::ball(5.0),
+                                Collider::ball(6.0),
                                 RigidBody::KinematicVelocityBased,
                                 Velocity::linear(Vec2::new(
                                     (rand::random::<f32>() - 0.5) * ITEM_SPEED,
@@ -313,7 +311,7 @@ fn bullet_hit_enemy(
                                 TextColor(Color::Srgba(BLUE)),
                                 Transform::from_translation(transform.translation.xy().extend(-2.0)),
                                 RigidBody::KinematicVelocityBased,
-                                Collider::ball(5.0),
+                                Collider::ball(6.0),
                                 Velocity::linear(Vec2::new(
                                     (rand::random::<f32>() - 0.5) * ITEM_SPEED,
                                     150.0 + rand::random::<f32>() * 50.0
@@ -457,31 +455,46 @@ fn player_shoot(
     mut query: Query<(&Transform, &mut ShootCooldown), With<Player>>,
     font: Res<AsciiFont>,
     mut commands: Commands,
+    powers: Res<PlayerPowers>,
 ) {
     for (transform, mut cooldown) in query.iter_mut() {
         if cooldown.0.finished() {
-            let bullet_speed = 400.0;
-            let direction = Vec3::Y;
+            const BULLET_SPEED: f32 = 400.0;
+            const  BASE_DIRECTION: Vec2 = Vec2::Y;
 
-            commands.spawn((
-                PlayerBullet,
+            let (num_bullets, angle_step_deg) = if powers.0 > 50 {
+                (5, 10.0)
+            } else if powers.0 > 30 {
+                (3, 10.0)
+            } else {
+                (1, 0.0)
+            };
 
-                Transform::from_translation(transform.translation),
-                Text2d::new("*"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 30.0,
-                    ..default()
-                },
-                TextLayout::default(),
-                TextColor(Color::Srgba(BLACK)),
+            for i in 0..num_bullets {
+                let offset = i as i32 - (num_bullets as i32 - 1) / 2;
+                let angle_rad = (offset as f32) * (angle_step_deg as f32).to_radians();
+                let rotated_direction = Vec2::from_angle(angle_rad).rotate(BASE_DIRECTION);
 
-                Collider::ball(5.0),
-                RigidBody::KinematicVelocityBased,
-                Velocity::linear(direction.xy() * bullet_speed),
-                ActiveEvents::COLLISION_EVENTS,
-                CollisionGroups::new(Group::GROUP_2, Group::GROUP_4),
-            ));
+                commands.spawn((
+                    PlayerBullet,
+
+                    Transform::from_translation(transform.translation),
+                    Text2d::new("*"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 30.0,
+                        ..default()
+                    },
+                    TextLayout::default(),
+                    TextColor(Color::Srgba(BLACK)),
+
+                    Collider::ball(5.0),
+                    RigidBody::KinematicVelocityBased,
+                    Velocity::linear(rotated_direction * BULLET_SPEED),
+                    ActiveEvents::COLLISION_EVENTS,
+                    CollisionGroups::new(Group::GROUP_2, Group::GROUP_4),
+                ));
+            }
             cooldown.0.reset();
         }
     }

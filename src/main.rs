@@ -26,6 +26,14 @@ struct SingleShot {
     direction: Vec2,
     cooldown: Timer,
 }
+#[derive(Component)]
+struct PlayerLivesText;
+#[derive(Component)]
+struct PlayerBombsText;
+#[derive(Component)]
+struct PlayerPowersText;
+#[derive(Component)]
+struct PlayerPointsText;
 
 #[derive(Resource)]
 struct AsciiFont(Handle<Font>);
@@ -40,6 +48,15 @@ struct WindowSize {
     width: f32,
     height: f32,
 }
+#[derive(Resource)]
+struct PlayerLives(pub i32);
+#[derive(Resource)]
+struct PlayerBombs(pub i32);
+#[derive(Resource)]
+struct PlayerPowers(pub i32);
+#[derive(Resource)]
+struct PlayerPoints(pub i32);
+
 
 fn linear_movement(
     mut commands: Commands,
@@ -362,6 +379,10 @@ fn setup(
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
     });
 
+    commands.insert_resource(PlayerLives(2));
+    commands.insert_resource(PlayerBombs(3));
+    commands.insert_resource(PlayerPoints(0));
+
     let font_size = 40.0;
     let text_font = TextFont {
         font: font.clone(),
@@ -442,6 +463,44 @@ fn setup(
         TextLayout::default(),
         TextColor(Color::Srgba(GRAY)),
         Transform::from_translation(Vec3::new(width / 2.0 * 0.219 + horizontal_margin, 0.0, 1.0)),
+    ));
+
+    commands.spawn((
+        Text2d::new("  Player: @@"),
+        text_font.clone(),
+        TextLayout::default(),
+        TextColor(Color::Srgba(WHITE)),
+
+        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25, 1.0)),
+        PlayerLivesText,
+    ));
+    commands.spawn((
+        Text2d::new(" Bomb: $$$"),
+        text_font.clone(),
+        TextLayout::default(),
+        TextColor(Color::Srgba(WHITE)),
+
+        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25 - font_size * 1.5, 1.0)),
+        PlayerBombsText,
+    ));
+
+    commands.spawn((
+        Text2d::new("Power: 0"),
+        text_font.clone(),
+        TextLayout::default(),
+        TextColor(Color::Srgba(WHITE)),
+
+        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25 - font_size * 3.5, 1.0)),
+        PlayerPowersText,
+    ));
+    commands.spawn((
+        Text2d::new("Point: 0"),
+        text_font.clone(),
+        TextLayout::default(),
+        TextColor(Color::Srgba(WHITE)),
+
+        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25 - font_size * 5.0, 1.0)),
+        PlayerPointsText,
     ));
 }
 

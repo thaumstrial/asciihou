@@ -1,6 +1,7 @@
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::DefaultPlugins;
+use bevy::input::common_conditions::*;
 use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
@@ -64,7 +65,7 @@ fn update_lives_text(
     let num = "@".repeat(lives.0.max(0) as usize);
     let margins = " ".repeat(lives.0.max(0) as usize);
     for mut text in query.iter_mut() {
-        text.0 = format!("{}Player: {}", margins, num);
+        text.0 = format!("  {}Player: {}", margins, num);
     }
 }
 fn update_bombs_text(
@@ -238,7 +239,7 @@ fn bullet_hit_player(
 ) {
     for event in collision_events.read() {
         if let CollisionEvent::Started(entity1, entity2, _) = event {
-            let (bullet_entity, player_entity) = if bullets.get(*entity1).is_ok() && player_query.get(*entity2).is_ok() {
+            let (bullet_entity, _) = if bullets.get(*entity1).is_ok() && player_query.get(*entity2).is_ok() {
                 (*entity1, *entity2)
             } else if bullets.get(*entity2).is_ok() && player_query.get(*entity1).is_ok() {
                 (*entity2, *entity1)
@@ -304,17 +305,17 @@ fn despawn_enemies(
     }
 }
 
+fn player_bomb(
+    mut bombs: ResMut<PlayerBombs>,
+) {
+    bombs.0 = (bombs.0 - 1).max(0);
+}
 
-fn player_fire (
-    keyboard_input: Res<ButtonInput<KeyCode>>,
+fn player_shoot(
     mut query: Query<(&Transform, &mut ShootCooldown), With<Player>>,
     font: Res<AsciiFont>,
     mut commands: Commands,
 ) {
-    if !keyboard_input.pressed(KeyCode::KeyJ) {
-        return;
-    }
-
     for (transform, mut cooldown) in query.iter_mut() {
         if cooldown.0.finished() {
             let bullet_speed = 400.0;
@@ -518,7 +519,7 @@ fn setup(
         PlayerLivesText,
     ));
     commands.spawn((
-        Text2d::new(" Bomb: $$$"),
+        Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
@@ -528,7 +529,7 @@ fn setup(
     ));
 
     commands.spawn((
-        Text2d::new("Power: 0"),
+        Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
@@ -537,7 +538,7 @@ fn setup(
         PlayerPowersText,
     ));
     commands.spawn((
-        Text2d::new("Point: 0"),
+        Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
@@ -581,6 +582,9 @@ fn main() {
         .add_systems(Update, bullet_hit_player)
         .add_systems(Update, single_shot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
+        .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
+        .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyJ)))
+        .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
         .add_systems(FixedUpdate, tick_cooldown_timer)
         .add_systems(FixedUpdate, despawn_bullets)
         .add_systems(FixedUpdate, despawn_enemies)
@@ -589,7 +593,6 @@ fn main() {
             RunFixedMainLoop,
             (
                 player_movement.in_set(RunFixedMainLoopSystem::BeforeFixedMainLoop),
-                player_fire.in_set(RunFixedMainLoopSystem::BeforeFixedMainLoop),
             )
         )
         .run();

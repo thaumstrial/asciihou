@@ -203,6 +203,31 @@ fn spawn_enemies(
     }
 }
 
+fn item_gravity(
+    mut query: Query<&mut Velocity, Or<(With<PowerItem>, With<PointItem>)>>,
+    time: Res<Time>,
+) {
+    let gravity_acc = -100.0;
+    let max_fall_speed = -100.0;
+    let horizontal_decay = 10.0;
+
+    for mut velocity in query.iter_mut() {
+        velocity.linvel.y += gravity_acc * time.delta_secs();
+        if velocity.linvel.y < max_fall_speed {
+            velocity.linvel.y = max_fall_speed;
+        }
+
+        if velocity.linvel.x.abs() > 0.0 {
+            let decay = horizontal_decay * time.delta_secs();
+            if velocity.linvel.x > 0.0 {
+                velocity.linvel.x = (velocity.linvel.x - decay).max(0.0);
+            } else {
+                velocity.linvel.x = (velocity.linvel.x + decay).min(0.0);
+            }
+        }
+    }
+}
+
 fn bullet_hit_enemy(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
@@ -238,7 +263,7 @@ fn bullet_hit_enemy(
                                 Text2d::new("P"),
                                 TextFont {
                                     font: font.0.clone(),
-                                    font_size: 30.0,
+                                    font_size: 25.0,
                                     ..default()
                                 },
                                 TextLayout::default(),
@@ -262,7 +287,7 @@ fn bullet_hit_enemy(
                                 Text2d::new("%"),
                                 TextFont {
                                     font: font.0.clone(),
-                                    font_size: 30.0,
+                                    font_size: 25.0,
                                     ..default()
                                 },
                                 TextLayout::default(),
@@ -657,6 +682,7 @@ fn main() {
         .add_systems(FixedUpdate, despawn_bullets_and_items)
         .add_systems(FixedUpdate, despawn_enemies)
         .add_systems(FixedUpdate, clamp_player_position)
+        .add_systems(FixedUpdate, item_gravity)
         .add_systems(
             RunFixedMainLoop,
             (

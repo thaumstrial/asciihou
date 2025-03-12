@@ -57,6 +57,26 @@ struct PlayerPowers(pub i32);
 #[derive(Resource)]
 struct PlayerPoints(pub i32);
 
+fn update_lives_text(
+    lives: Res<PlayerLives>,
+    mut query: Query<&mut Text2d, With<PlayerLivesText>>,
+) {
+    let num = "@".repeat(lives.0.max(0) as usize);
+    let margins = " ".repeat(lives.0.max(0) as usize);
+    for mut text in query.iter_mut() {
+        text.0 = format!("{}Player: {}", margins, num);
+    }
+}
+fn update_bombs_text(
+    bombs: Res<PlayerBombs>,
+    mut query: Query<&mut Text2d, With<PlayerBombsText>>,
+) {
+    let num = "$".repeat(bombs.0.max(0) as usize);
+    let margins = " ".repeat(bombs.0.max(0) as usize);
+    for mut text in query.iter_mut() {
+        text.0 = format!("{}Bomb: {}", margins, num);
+    }
+}
 
 fn linear_movement(
     mut commands: Commands,
@@ -205,6 +225,29 @@ fn bullet_hit_enemy(
                 commands.entity(bullet_entity).despawn();
             }
             _ => {}
+        }
+    }
+}
+
+fn bullet_hit_player(
+    mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    player_query: Query<Entity, With<Player>>,
+    bullets: Query<Entity, With<EnemyBullet>>,
+    mut lives: ResMut<PlayerLives>,
+) {
+    for event in collision_events.read() {
+        if let CollisionEvent::Started(entity1, entity2, _) = event {
+            let (bullet_entity, player_entity) = if bullets.get(*entity1).is_ok() && player_query.get(*entity2).is_ok() {
+                (*entity1, *entity2)
+            } else if bullets.get(*entity2).is_ok() && player_query.get(*entity1).is_ok() {
+                (*entity2, *entity1)
+            } else {
+                continue;
+            };
+
+            lives.0 = (lives.0 - 1).max(0);
+            commands.entity(bullet_entity).despawn();
         }
     }
 }
@@ -535,7 +578,9 @@ fn main() {
         .add_systems(Update, linear_movement)
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit_enemy)
+        .add_systems(Update, bullet_hit_player)
         .add_systems(Update, single_shot)
+        .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(FixedUpdate, tick_cooldown_timer)
         .add_systems(FixedUpdate, despawn_bullets)
         .add_systems(FixedUpdate, despawn_enemies)

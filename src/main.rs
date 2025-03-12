@@ -15,6 +15,11 @@ struct ShootCooldown(Timer);
 #[derive(Component)]
 struct PlayerBullet;
 #[derive(Component)]
+struct PlayerHomingBullet {
+    speed: f32,
+    rotate_speed: f32,
+}
+#[derive(Component)]
 struct Enemy;
 #[derive(Component)]
 struct EnemyBullet;
@@ -44,6 +49,7 @@ struct SupportUnit;
 #[derive(Component)]
 struct SupportHomingShoot {
     speed: f32,
+    rotate_speed: f32,
     cooldown: Timer,
 }
 
@@ -120,7 +126,83 @@ fn linear_movement(
     }
 }
 
-fn single_shoot(
+fn homing_bullet(
+    mut query: Query<(&mut Velocity, &Transform, &PlayerHomingBullet)>,
+    enemies: Query<&Transform, With<Enemy>>,
+    time: Res<Time>,
+) {
+    for (mut velocity, bullet_transform, homing) in query.iter_mut() {
+        let current_dir = velocity.linvel.normalize_or_zero();
+
+        if let Some(target) = enemies.iter()
+            .min_by(|a, b| {
+                let da = bullet_transform.translation.distance_squared(a.translation);
+                let db = bullet_transform.translation.distance_squared(b.translation);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+
+            let desired_dir = (target.translation.truncate() - bullet_transform.translation.truncate())
+                .normalize_or_zero();
+
+            let lerped_dir = current_dir.lerp(desired_dir, homing.rotate_speed * time.delta_secs())
+                .normalize_or_zero();
+
+            velocity.linvel = lerped_dir * homing.speed;
+        }
+    }
+}
+
+fn support_homing_shoot(
+    mut commands: Commands,
+    mut query: Query<(&GlobalTransform, &mut SupportHomingShoot)>,
+    enemies: Query<&GlobalTransform, With<Enemy>>,
+    time: Res<Time>,
+    font: Res<AsciiFont>,
+) {
+    for (support_transform, mut homing) in query.iter_mut() {
+        homing.cooldown.tick(time.delta());
+        if !homing.cooldown.finished() {
+            continue;
+        }
+
+        if let Some(target) = enemies.iter()
+            .min_by(|a, b| {
+                let da = support_transform.translation().truncate().distance_squared(a.translation().truncate());
+                let db = support_transform.translation().truncate().distance_squared(b.translation().truncate());
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+
+            let direction = (target.translation().truncate() - support_transform.translation().truncate())
+                .normalize_or_zero();
+
+            commands.spawn((
+                PlayerBullet,
+                PlayerHomingBullet {
+                    speed: homing.speed,
+                    rotate_speed: homing.rotate_speed,
+                },
+                Transform::from_translation(support_transform.translation()),
+                Text2d::new("*"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 30.0,
+                    ..default()
+                },
+                TextLayout::default(),
+                TextColor(Color::Srgba(PURPLE)),
+                Collider::ball(5.0),
+                RigidBody::KinematicVelocityBased,
+                Velocity::linear(direction * homing.speed),
+                ActiveEvents::COLLISION_EVENTS,
+                CollisionGroups::new(Group::GROUP_2, Group::GROUP_4),
+            ));
+        }
+
+        homing.cooldown.reset();
+    }
+}
+
+fn enemy_single_shoot(
     mut commands: Commands,
     mut query: Query<(&Transform, &mut EnemySingleShoot)>,
     time: Res<Time>,
@@ -175,7 +257,8 @@ fn spawn_support_units(
             commands.spawn((
                 SupportUnit,
                 SupportHomingShoot {
-                    speed: 100.0,
+                    speed: 400.0,
+                    rotate_speed: 0.5,
                     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating)
                 },
                 Text2d::new("N"),
@@ -818,7 +901,8 @@ fn main() {
         .add_systems(Update, bullet_hit_enemy)
         .add_systems(Update, bullet_hit_player)
         .add_systems(Update, item_hit_player)
-        .add_systems(Update, single_shoot)
+        .add_systems(Update, enemy_single_shoot)
+        .add_systems(Update, support_homing_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
         .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))
@@ -833,6 +917,7 @@ fn main() {
         .add_systems(FixedUpdate, despawn_enemies)
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(FixedUpdate, item_gravity)
+        .add_systems(FixedUpdate, homing_bullet)
         .add_systems(
             RunFixedMainLoop,
             (

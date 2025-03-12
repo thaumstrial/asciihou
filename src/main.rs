@@ -1,6 +1,6 @@
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
-use bevy::color::palettes::tailwind::{BLUE_400, RED_400};
+use bevy::color::palettes::tailwind::{BLUE_400, GREEN_400, RED_400};
 use bevy::DefaultPlugins;
 use bevy::input::common_conditions::*;
 use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
@@ -36,6 +36,13 @@ struct Health(i32);
 struct LinearMovement(Vec2);
 #[derive(Component)]
 struct EnemySingleShoot {
+    direction: Vec2,
+    cooldown: Timer,
+}
+#[derive(Component)]
+struct EnemyFanShoot {
+    num_bullets: i32,
+    angle_deg: f32,
     direction: Vec2,
     cooldown: Timer,
 }
@@ -363,6 +370,48 @@ fn enemy_single_shoot(
     }
 }
 
+fn enemy_fan_shoot(
+    mut commands: Commands,
+    mut query: Query<(&Transform, &mut EnemyFanShoot)>,
+    time: Res<Time>,
+    font: Res<AsciiFont>,
+) {
+    for (transform, mut shoot) in query.iter_mut() {
+        shoot.cooldown.tick(time.delta());
+        if !shoot.cooldown.finished() {
+            continue;
+        }
+
+        let base_direction = shoot.direction;
+
+        for i in 0..shoot.num_bullets {
+            let offset_index = i - (shoot.num_bullets - 1) / 2;
+            let angle_rad = (offset_index as f32) * shoot.angle_deg.to_radians();
+            let direction = Vec2::from_angle(angle_rad).rotate(base_direction);
+
+            commands.spawn((
+                EnemyBullet,
+                Transform::from_translation(transform.translation),
+                Text2d::new("x"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 30.0,
+                    ..default()
+                },
+                TextLayout::default(),
+                TextColor(Color::Srgba(GREEN_400)),
+                Collider::ball(5.0),
+                RigidBody::KinematicVelocityBased,
+                Velocity::linear(direction),
+                ActiveEvents::COLLISION_EVENTS,
+                CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
+            ));
+        }
+
+        shoot.cooldown.reset();
+    }
+}
+
 fn spawn_support_units(
     mut commands: Commands,
     font: Res<AsciiFont>,
@@ -458,8 +507,6 @@ fn spawn_enemies(
             let shoot_angle = (rand::random::<f32>() * 2.0 - 1.0) * MAX_SHOOT_DEVIATION_DEG.to_radians();
             let shoot_direction = (player_pos - spawn_pos).rotate(Vec2::from_angle(shoot_angle)).normalize_or_zero() * speed;
 
-            let is_homing_shooter = rand::random::<f32>() < 0.5;
-
             let mut enemy_entity = commands.spawn((
                 Text2d::new("&"),
                 TextFont {
@@ -483,16 +530,25 @@ fn spawn_enemies(
                 Health((rand::random::<u32>() % 10 + 1) as i32),
             ));
 
-            if is_homing_shooter {
+            let shoot_type = rand::random::<f32>();
+
+            if shoot_type < 0.3 {
                 enemy_entity.insert(EnemyHomingShoot {
                     speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
                     rotate_speed: rand::random::<f32>() * 0.4,
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
                 });
-            } else {
+            } else if shoot_type < 0.6 {
                 enemy_entity.insert(EnemySingleShoot {
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
+                });
+            } else {
+                enemy_entity.insert(EnemyFanShoot {
+                    num_bullets: rand::random::<i32>().abs()     % 6 + 3,
+                    angle_deg: 20.0 * rand::random::<f32>() + 10.0,
+                    direction: shoot_direction * (rand::random::<f32>() * 0.5 + 1.5),
+                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.4, TimerMode::Repeating),
                 });
             }
         }
@@ -1073,6 +1129,7 @@ fn main() {
         .add_systems(Update, item_hit_player)
         .add_systems(Update, enemy_single_shoot)
         .add_systems(Update, enemy_homing_shoot)
+        .add_systems(Update, enemy_fan_shoot)
         .add_systems(Update, support_homing_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))

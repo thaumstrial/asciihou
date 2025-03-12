@@ -6,7 +6,7 @@ use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
-
+use bevy_rapier2d::prelude::ColliderMassProperties::MassProperties;
 
 #[derive(Component)]
 struct Player;
@@ -23,7 +23,7 @@ struct Health(i32);
 #[derive(Component)]
 struct LinearMovement(Vec2);
 #[derive(Component)]
-struct SingleShoot {
+struct EnemySingleShoot {
     direction: Vec2,
     cooldown: Timer,
 }
@@ -39,6 +39,13 @@ struct PlayerPointsText;
 struct PowerItem;
 #[derive(Component)]
 struct PointItem;
+#[derive(Component)]
+struct SupportUnit;
+#[derive(Component)]
+struct SupportHomingShoot {
+    speed: f32,
+    cooldown: Timer,
+}
 
 #[derive(Resource)]
 struct AsciiFont(Handle<Font>);
@@ -115,7 +122,7 @@ fn linear_movement(
 
 fn single_shoot(
     mut commands: Commands,
-    mut query: Query<(&Transform, &mut SingleShoot)>,
+    mut query: Query<(&Transform, &mut EnemySingleShoot)>,
     time: Res<Time>,
     font: Res<AsciiFont>,
 ) {
@@ -150,6 +157,57 @@ fn single_shoot(
     }
 }
 
+fn spawn_support_units(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+    powers: Res<PlayerPowers>,
+    player_query: Query<(Entity, &Transform), With<Player>>,
+    support_query: Query<(Entity), With<SupportUnit>>,
+) {
+    if powers.0 < 1 || support_query.iter().count() >= 2 {
+        return;
+    }
+
+    if let Ok((player_entity, player_transform)) = player_query.get_single() {
+        let offsets = [Vec2::new(30.0, 30.0), Vec2::new(-30.0, 30.0)];
+
+        for offset_pos in offsets {
+            commands.spawn((
+                SupportUnit,
+                SupportHomingShoot {
+                    speed: 100.0,
+                    cooldown: Timer::from_seconds(0.2, TimerMode::Repeating)
+                },
+                Text2d::new("N"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 30.0,
+                    ..default()
+                },
+                Transform::from_translation(offset_pos.extend(0.0)),
+                RigidBody::KinematicVelocityBased,
+                Velocity {
+                    angvel: 2.0,
+                    ..default()
+                },
+                TextLayout::default(),
+                TextColor(Color::Srgba(PINK)),
+            )).set_parent(player_entity);
+        }
+    }
+}
+
+fn despawn_support_units(
+    mut commands: Commands,
+    powers: Res<PlayerPowers>,
+    query: Query<Entity, With<SupportUnit>>,
+) {
+    if powers.0 <= 20 {
+        for entity in query.iter() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
 
 fn spawn_enemies(
     mut commands: Commands,
@@ -212,7 +270,7 @@ fn spawn_enemies(
                 LinearMovement(movement_vec),
                 Health((rand::random::<u32>() % 3 + 1) as i32),
 
-                SingleShoot {
+                EnemySingleShoot {
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
                 }
@@ -767,6 +825,8 @@ fn main() {
         .add_systems(Update, update_points_text.run_if(resource_changed::<PlayerPoints>))
         .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyJ)))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
+        .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
+        .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(FixedUpdate, tick_cooldown_timer)
         .add_systems(FixedUpdate, despawn_bullets)
         .add_systems(FixedUpdate, despawn_items)

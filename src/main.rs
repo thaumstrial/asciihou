@@ -2,6 +2,7 @@ use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::color::palettes::tailwind::{BLUE_400, GREEN_400, RED_400};
 use bevy::DefaultPlugins;
+use bevy::ecs::query::QueryData;
 use bevy::input::common_conditions::*;
 use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
 use bevy::prelude::*;
@@ -47,12 +48,6 @@ struct EnemyFanShoot {
     cooldown: Timer,
 }
 #[derive(Component)]
-struct EnemyHomingShoot {
-    speed: f32,
-    rotate_speed: f32,
-    cooldown: Timer,
-}
-#[derive(Component)]
 struct PlayerLivesText;
 #[derive(Component)]
 struct PlayerBombsText;
@@ -66,13 +61,6 @@ struct PowerItem;
 struct PointItem;
 #[derive(Component)]
 struct SupportUnit;
-#[derive(Component)]
-struct SupportHomingShoot {
-    speed: f32,
-    rotate_speed: f32,
-    cooldown: Timer,
-}
-
 #[derive(Resource)]
 struct AsciiFont(Handle<Font>);
 #[derive(Resource)]
@@ -218,103 +206,6 @@ fn homing_bullet(
     }
 }
 
-fn enemy_homing_shoot(
-    mut commands: Commands,
-    mut query: Query<(&Transform, &mut EnemyHomingShoot)>,
-    player_query: Query<&Transform, With<Player>>,
-    time: Res<Time>,
-    font: Res<AsciiFont>,
-) {
-    if let Ok(player_transform) = player_query.get_single() {
-        let player_pos = player_transform.translation.truncate();
-
-        for (enemy_transform, mut shoot) in query.iter_mut() {
-            shoot.cooldown.tick(time.delta());
-
-            if shoot.cooldown.finished() {
-                let spawn_pos = enemy_transform.translation;
-                let dir = (player_pos - spawn_pos.truncate()).normalize_or_zero();
-
-                commands.spawn((
-                    EnemyBullet,
-                    HomingBullet {
-                        target: HomingTarget::Player,
-                        speed: shoot.speed,
-                        rotate_speed: shoot.rotate_speed,
-                    },
-                    Transform::from_translation(spawn_pos),
-                    Text2d::new("x"),
-                    TextFont {
-                        font: font.0.clone(),
-                        font_size: 30.0,
-                        ..default()
-                    },
-                    TextLayout::default(),
-                    TextColor(Color::Srgba(GOLD)),
-                    Collider::ball(5.0),
-                    RigidBody::KinematicVelocityBased,
-                    Velocity::linear(dir * shoot.speed),
-                    ActiveEvents::COLLISION_EVENTS,
-                    CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
-                ));
-
-                shoot.cooldown.reset();
-            }
-        }
-    }
-}
-
-fn support_homing_shoot(
-    mut commands: Commands,
-    mut query: Query<(&GlobalTransform, &mut SupportHomingShoot)>,
-    enemies: Query<&GlobalTransform, With<Enemy>>,
-    time: Res<Time>,
-    font: Res<AsciiFont>,
-) {
-    for (support_transform, mut homing) in query.iter_mut() {
-        homing.cooldown.tick(time.delta());
-        if !homing.cooldown.finished() {
-            continue;
-        }
-
-        if let Some(target) = enemies.iter()
-            .min_by(|a, b| {
-                let da = support_transform.translation().truncate().distance_squared(a.translation().truncate());
-                let db = support_transform.translation().truncate().distance_squared(b.translation().truncate());
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-
-            let direction = (target.translation().truncate() - support_transform.translation().truncate())
-                .normalize_or_zero();
-
-            commands.spawn((
-                PlayerBullet,
-                HomingBullet {
-                    target: HomingTarget::Enemy,
-                    speed: homing.speed,
-                    rotate_speed: homing.rotate_speed,
-                },
-                Transform::from_translation(support_transform.translation()),
-                Text2d::new("*"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 30.0,
-                    ..default()
-                },
-                TextLayout::default(),
-                TextColor(Color::Srgba(PURPLE)),
-                Collider::ball(5.0),
-                RigidBody::KinematicVelocityBased,
-                Velocity::linear(direction * homing.speed),
-                ActiveEvents::COLLISION_EVENTS,
-                CollisionGroups::new(Group::GROUP_2, Group::GROUP_4),
-            ));
-        }
-
-        homing.cooldown.reset();
-    }
-}
-
 fn enemy_single_shoot(
     mut commands: Commands,
     mut query: Query<(&Transform, &mut EnemySingleShoot)>,
@@ -414,11 +305,11 @@ fn spawn_support_units(
         for offset_pos in offsets {
             commands.spawn((
                 SupportUnit,
-                SupportHomingShoot {
-                    speed: 800.0,
-                    rotate_speed: 1.0,
-                    cooldown: Timer::from_seconds(0.2, TimerMode::Repeating)
-                },
+                // SupportHomingShoot {
+                //     speed: 800.0,
+                //     rotate_speed: 1.0,
+                //     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating)
+                // },
                 Text2d::new("N"),
                 TextFont {
                     font: font.0.clone(),
@@ -515,11 +406,11 @@ fn spawn_enemies(
             let shoot_type = rand::random::<f32>();
 
             if shoot_type < 0.3 {
-                enemy_entity.insert(EnemyHomingShoot {
-                    speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
-                    rotate_speed: rand::random::<f32>() * 0.4,
-                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
-                });
+                // enemy_entity.insert(EnemyHomingShoot {
+                //     speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
+                //     rotate_speed: rand::random::<f32>() * 0.4,
+                //     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
+                // });
             } else if shoot_type < 0.6 {
                 enemy_entity.insert(EnemySingleShoot {
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
@@ -562,6 +453,25 @@ fn item_gravity(
     }
 }
 
+fn match_bullet_hit_pair<
+    Bullet: Component,
+    Target: Component,
+    T: QueryData
+>(
+    entity1: Entity,
+    entity2: Entity,
+    query1: &Query<Entity, With<Bullet>>,
+    query2: &Query<T, With<Target>>,
+) -> Option<(Entity, Entity)> {
+    if query1.get(entity1).is_ok() && query2.get(entity2).is_ok() {
+        Some((entity1, entity2))
+    } else if query1.get(entity2).is_ok() && query2.get(entity1).is_ok() {
+        Some((entity2, entity1))
+    } else {
+        None
+    }
+}
+
 fn bullet_hit_enemy(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
@@ -573,85 +483,85 @@ fn bullet_hit_enemy(
         match event {
             CollisionEvent::Started(entity1, entity2, _) => {
 
-                let (bullet_entity, enemy_entity) = if bullets.get(*entity1).is_ok() && enemies.get(*entity2).is_ok() {
-                    (*entity1, *entity2)
-                } else if bullets.get(*entity2).is_ok() && enemies.get(*entity1).is_ok() {
-                    (*entity2, *entity1)
-                } else {
-                    continue;
-                };
+                if let Some((bullet_entity, enemy_entity)) =
+                    match_bullet_hit_pair::<
+                        PlayerBullet,
+                        Enemy,
+                        (Entity, &mut Health, &Transform)
+                    >(*entity1, *entity2, &bullets, &enemies)
+                {
+                    if let Ok((enemy_ent, mut health, transform)) = enemies.get_mut(enemy_entity) {
+                        health.0 -= 1;
+                        if health.0 <= 0 {
+                            let power_count = rand::random::<u32>() % 3 + 1;
+                            const ITEM_SPEED: f32 = 50.0;
 
-                if let Ok((enemy_ent, mut health, transform)) = enemies.get_mut(enemy_entity) {
-                    health.0 -= 1;
-                    if health.0 <= 0 {
-                        let power_count = rand::random::<u32>() % 3 + 1;
-                        const ITEM_SPEED: f32 = 50.0;
+                            for _ in 0..power_count {
 
-                        for _ in 0..power_count {
+                                commands.spawn((
+                                    PowerItem,
 
-                            commands.spawn((
-                                PowerItem,
+                                    Sprite::from_color(Color::Srgba(RED_400), Vec2::new(20.0, 20.0)),
+                                    Transform::from_translation(transform.translation.xy().extend(-1.0)),
 
-                                Sprite::from_color(Color::Srgba(RED_400), Vec2::new(20.0, 20.0)),
-                                Transform::from_translation(transform.translation.xy().extend(-1.0)),
+                                    Collider::ball(8.0),
+                                    RigidBody::KinematicVelocityBased,
+                                    Velocity::linear(Vec2::new(
+                                        (rand::random::<f32>() - 0.5) * ITEM_SPEED,
+                                        150.0 + rand::random::<f32>() * 50.0
+                                    )),
+                                    ActiveEvents::COLLISION_EVENTS,
+                                    CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
+                                )).with_children(|builder| {
+                                    builder.spawn((
+                                        Text2d::new("P"),
+                                        TextFont {
+                                            font: font.0.clone(),
+                                            font_size: 25.0,
+                                            ..default()
+                                        },
+                                        TextLayout::default(),
+                                        TextColor(Color::Srgba(WHITE)),
+                                        Transform::from_translation(Vec3::Z),
+                                    ));
+                                });
+                            }
 
-                                Collider::ball(8.0),
-                                RigidBody::KinematicVelocityBased,
-                                Velocity::linear(Vec2::new(
-                                    (rand::random::<f32>() - 0.5) * ITEM_SPEED,
-                                    150.0 + rand::random::<f32>() * 50.0
-                                )),
-                                ActiveEvents::COLLISION_EVENTS,
-                                CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
-                            )).with_children(|builder| {
-                                builder.spawn((
-                                    Text2d::new("P"),
-                                    TextFont {
-                                        font: font.0.clone(),
-                                        font_size: 25.0,
-                                        ..default()
-                                    },
-                                    TextLayout::default(),
-                                    TextColor(Color::Srgba(WHITE)),
-                                    Transform::from_translation(Vec3::Z),
-                                ));
-                            });
+                            let point_count = rand::random::<u32>() % 3 + 1;
+                            for _ in 0..point_count {
+                                commands.spawn((
+                                    PointItem,
+
+                                    Sprite::from_color(Color::Srgba(BLUE_400), Vec2::new(20.0, 20.0)),
+                                    Transform::from_translation(transform.translation.xy().extend(-3.0)),
+                                    RigidBody::KinematicVelocityBased,
+                                    Collider::ball(8.0),
+                                    Velocity::linear(Vec2::new(
+                                        (rand::random::<f32>() - 0.5) * ITEM_SPEED,
+                                        150.0 + rand::random::<f32>() * 50.0
+                                    )),
+                                    CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
+                                    ActiveEvents::COLLISION_EVENTS,
+                                )).with_children(|builder| {
+                                    builder.spawn((
+                                        Text2d::new("%"),
+                                        TextFont {
+                                            font: font.0.clone(),
+                                            font_size: 25.0,
+                                            ..default()
+                                        },
+                                        TextLayout::default(),
+                                        TextColor(Color::Srgba(WHITE)),
+                                        Transform::from_translation(Vec3::Z),
+                                    ));
+                                });
+                            }
+                            commands.entity(enemy_ent).despawn_recursive();
                         }
-
-                        let point_count = rand::random::<u32>() % 3 + 1;
-                        for _ in 0..point_count {
-                            commands.spawn((
-                                PointItem,
-
-                                Sprite::from_color(Color::Srgba(BLUE_400), Vec2::new(20.0, 20.0)),
-                                Transform::from_translation(transform.translation.xy().extend(-3.0)),
-                                RigidBody::KinematicVelocityBased,
-                                Collider::ball(8.0),
-                                Velocity::linear(Vec2::new(
-                                    (rand::random::<f32>() - 0.5) * ITEM_SPEED,
-                                    150.0 + rand::random::<f32>() * 50.0
-                                )),
-                                CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
-                                ActiveEvents::COLLISION_EVENTS,
-                            )).with_children(|builder| {
-                                builder.spawn((
-                                    Text2d::new("%"),
-                                    TextFont {
-                                        font: font.0.clone(),
-                                        font_size: 25.0,
-                                        ..default()
-                                    },
-                                    TextLayout::default(),
-                                    TextColor(Color::Srgba(WHITE)),
-                                    Transform::from_translation(Vec3::Z),
-                                ));
-                            });
-                        }
-
-                        commands.entity(enemy_ent).despawn();
                     }
+                    commands.entity(bullet_entity).despawn_recursive();
                 }
-                commands.entity(bullet_entity).despawn();
+
             }
             _ => {}
         }
@@ -667,16 +577,16 @@ fn bullet_hit_player(
 ) {
     for event in collision_events.read() {
         if let CollisionEvent::Started(entity1, entity2, _) = event {
-            let (bullet_entity, _) = if bullets.get(*entity1).is_ok() && player_query.get(*entity2).is_ok() {
-                (*entity1, *entity2)
-            } else if bullets.get(*entity2).is_ok() && player_query.get(*entity1).is_ok() {
-                (*entity2, *entity1)
-            } else {
-                continue;
-            };
-
-            lives.0 = (lives.0 - 1).max(0);
-            commands.entity(bullet_entity).despawn();
+            if let Some((bullet_entity, _)) =
+                match_bullet_hit_pair::<
+                    EnemyBullet,
+                    Player,
+                    Entity,
+                >(*entity1, *entity2, &bullets, &player_query)
+            {
+                lives.0 = (lives.0 - 1).max(0);
+                commands.entity(bullet_entity).despawn_recursive();
+            }
         }
     }
 }
@@ -733,6 +643,23 @@ fn tick_cooldown_timer(
     }
 }
 
+fn despawn_out_of_bounds<'a>(
+    commands: &mut Commands,
+    entities: impl Iterator<Item = (Entity, &'a Transform)>,
+    window: &WindowSize,
+    extra_margin: f32,
+) {
+    let max_x = window.width / 2.0 + extra_margin;
+    let max_y = window.height / 2.0 + extra_margin;
+
+    for (entity, transform) in entities {
+        let pos = transform.translation;
+        if pos.x.abs() > max_x || pos.y.abs() > max_y {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
 fn despawn_bullets(
     mut commands: Commands,
     query: Query<
@@ -744,12 +671,7 @@ fn despawn_bullets(
     >,
     window: Res<WindowSize>,
 ) {
-    for (entity, transform) in query.iter() {
-        let pos = transform.translation;
-        if pos.x.abs() > window.width / 2.0 || pos.y.abs() > window.height / 2.0 {
-            commands.entity(entity).despawn();
-        }
-    }
+    despawn_out_of_bounds(&mut commands, query.iter(), &window, 0.0);
 }
 
 fn despawn_items(
@@ -763,35 +685,15 @@ fn despawn_items(
     >,
     window: Res<WindowSize>,
 ) {
-    const EXTRA_MARGIN: f32 = 200.0;
-
-    let max_x = window.width / 2.0 + EXTRA_MARGIN;
-    let max_y = window.height / 2.0 + EXTRA_MARGIN;
-
-    for (entity, transform) in query.iter() {
-        let pos = transform.translation;
-        if pos.x.abs() > max_x || pos.y.abs() > max_y {
-            commands.entity(entity).despawn();
-        }
-    }
+    despawn_out_of_bounds(&mut commands, query.iter(), &window, 200.0);
 }
 
 fn despawn_enemies(
     mut commands: Commands,
-    enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    query: Query<(Entity, &Transform), With<Enemy>>,
     window: Res<WindowSize>,
 ) {
-    const EXTRA_MARGIN: f32 = 100.0;
-
-    let max_x = window.width / 2.0 + EXTRA_MARGIN;
-    let max_y = window.height / 2.0 + EXTRA_MARGIN;
-
-    for (entity, transform) in enemy_query.iter() {
-        let pos = transform.translation;
-        if pos.x.abs() > max_x || pos.y.abs() > max_y {
-            commands.entity(entity).despawn();
-        }
-    }
+    despawn_out_of_bounds(&mut commands, query.iter(), &window, 100.0);
 }
 
 fn player_bomb(
@@ -1110,9 +1012,7 @@ fn main() {
         .add_systems(Update, bullet_hit_player)
         .add_systems(Update, item_hit_player)
         .add_systems(Update, enemy_single_shoot)
-        .add_systems(Update, enemy_homing_shoot)
         .add_systems(Update, enemy_fan_shoot)
-        .add_systems(Update, support_homing_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
         .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))

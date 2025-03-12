@@ -7,7 +7,6 @@ use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
-use bevy_rapier2d::prelude::ColliderMassProperties::MassProperties;
 
 #[derive(Component)]
 struct Player;
@@ -25,12 +24,23 @@ struct Enemy;
 #[derive(Component)]
 struct EnemyBullet;
 #[derive(Component)]
+struct EnemyHomingBullet {
+    speed: f32,
+    rotate_speed: f32,
+}
+#[derive(Component)]
 struct Health(i32);
 #[derive(Component)]
 struct LinearMovement(Vec2);
 #[derive(Component)]
 struct EnemySingleShoot {
     direction: Vec2,
+    cooldown: Timer,
+}
+#[derive(Component)]
+struct EnemyHomingShoot {
+    speed: f32,
+    rotate_speed: f32,
     cooldown: Timer,
 }
 #[derive(Component)]
@@ -127,6 +137,35 @@ fn linear_movement(
     }
 }
 
+fn enemy_homing_bullet(
+    mut query: Query<(&mut Velocity, &Transform, &EnemyHomingBullet)>,
+    players: Query<&Transform, With<Player>>,
+    time: Res<Time>,
+) {
+    for (mut velocity, bullet_transform, homing) in query.iter_mut() {
+        let current_dir = velocity.linvel.normalize_or_zero();
+
+        if let Some(target) = players.iter()
+            .min_by(|a, b| {
+                let da = bullet_transform.translation.distance_squared(a.translation);
+                let db = bullet_transform.translation.distance_squared(b.translation);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+
+            let desired_dir = (target.translation.truncate() - bullet_transform.translation.truncate())
+                .normalize_or_zero();
+
+            let angle_between = current_dir.angle_to(desired_dir);
+            let max_rotate = homing.rotate_speed * time.delta_secs();
+
+            let clamped_angle = angle_between.clamp(-max_rotate, max_rotate);
+            let new_dir = current_dir.rotate(Vec2::from_angle(clamped_angle));
+
+            velocity.linvel = new_dir.normalize_or_zero() * homing.speed;
+        }
+    }
+}
+
 fn player_homing_bullet(
     mut query: Query<(&mut Velocity, &Transform, &PlayerHomingBullet)>,
     enemies: Query<&Transform, With<Enemy>>,
@@ -156,6 +195,50 @@ fn player_homing_bullet(
     }
 }
 
+fn enemy_homing_shoot(
+    mut commands: Commands,
+    mut query: Query<(&Transform, &mut EnemyHomingShoot)>,
+    player_query: Query<&Transform, With<Player>>,
+    time: Res<Time>,
+    font: Res<AsciiFont>,
+) {
+    if let Ok(player_transform) = player_query.get_single() {
+        let player_pos = player_transform.translation.truncate();
+
+        for (enemy_transform, mut shoot) in query.iter_mut() {
+            shoot.cooldown.tick(time.delta());
+
+            if shoot.cooldown.finished() {
+                let spawn_pos = enemy_transform.translation;
+                let dir = (player_pos - spawn_pos.truncate()).normalize_or_zero();
+
+                commands.spawn((
+                    EnemyBullet,
+                    EnemyHomingBullet {
+                        speed: shoot.speed,
+                        rotate_speed: shoot.rotate_speed,
+                    },
+                    Transform::from_translation(spawn_pos),
+                    Text2d::new("x"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 30.0,
+                        ..default()
+                    },
+                    TextLayout::default(),
+                    TextColor(Color::Srgba(GOLD)),
+                    Collider::ball(5.0),
+                    RigidBody::KinematicVelocityBased,
+                    Velocity::linear(dir * shoot.speed),
+                    ActiveEvents::COLLISION_EVENTS,
+                    CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
+                ));
+
+                shoot.cooldown.reset();
+            }
+        }
+    }
+}
 
 fn support_homing_shoot(
     mut commands: Commands,
@@ -290,7 +373,7 @@ fn despawn_support_units(
     powers: Res<PlayerPowers>,
     query: Query<Entity, With<SupportUnit>>,
 ) {
-    if powers.0 <= 20 {
+    if powers.0 < 1 {
         for entity in query.iter() {
             commands.entity(entity).despawn();
         }
@@ -307,7 +390,7 @@ fn spawn_enemies(
     font: Res<AsciiFont>,
 ) {
     const MAX_ENEMIES: usize = 10;
-    const SPAWN_CHANCE: f32 = 0.5;
+    const SPAWN_CHANCE: f32 = 0.8;
     const MAX_DEVIATION_DEG: f32 = 30.0;
     const MAX_SHOOT_DEVIATION_DEG: f32 = 10.0;
 
@@ -336,7 +419,9 @@ fn spawn_enemies(
             let shoot_angle = (rand::random::<f32>() * 2.0 - 1.0) * MAX_SHOOT_DEVIATION_DEG.to_radians();
             let shoot_direction = (player_pos - spawn_pos).rotate(Vec2::from_angle(shoot_angle)).normalize_or_zero() * speed;
 
-            commands.spawn((
+            let is_homing_shooter = rand::random::<f32>() < 0.5;
+
+            let mut enemy_entity = commands.spawn((
                 Text2d::new("&"),
                 TextFont {
                     font: font.0.clone(),
@@ -356,13 +441,21 @@ fn spawn_enemies(
 
                 Transform::from_translation(spawn_pos.extend(0.0)),
                 LinearMovement(movement_vec),
-                Health((rand::random::<u32>() % 3 + 1) as i32),
+                Health((rand::random::<u32>() % 10 + 1) as i32),
+            ));
 
-                EnemySingleShoot {
+            if is_homing_shooter {
+                enemy_entity.insert(EnemyHomingShoot {
+                    speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
+                    rotate_speed: rand::random::<f32>() * 0.4,
+                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
+                });
+            } else {
+                enemy_entity.insert(EnemySingleShoot {
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
-                }
-            ));
+                });
+            }
         }
     }
 }
@@ -918,6 +1011,7 @@ fn main() {
         .add_systems(Update, bullet_hit_player)
         .add_systems(Update, item_hit_player)
         .add_systems(Update, enemy_single_shoot)
+        .add_systems(Update, enemy_homing_shoot)
         .add_systems(Update, support_homing_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
@@ -934,6 +1028,7 @@ fn main() {
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(FixedUpdate, item_gravity)
         .add_systems(FixedUpdate, player_homing_bullet)
+        .add_systems(FixedUpdate, enemy_homing_bullet)
         .add_systems(
             RunFixedMainLoop,
             (

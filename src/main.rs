@@ -82,6 +82,26 @@ fn update_bombs_text(
         text.0 = format!("{}Bomb: {}", margins, num);
     }
 }
+fn update_powers_text(
+    powers: Res<PlayerPowers>,
+    mut query: Query<&mut Text2d, With<PlayerPowersText>>,
+) {
+    let num = powers.0.to_string();
+    let margins = " ".repeat(powers.0.to_string().len().max(0) as usize);
+    for mut text in query.iter_mut() {
+        text.0 = format!(" {}Power: {}", margins, num);
+    }
+}
+fn update_points_text(
+    points: Res<PlayerPoints>,
+    mut query: Query<&mut Text2d, With<PlayerPointsText>>,
+) {
+    let num = points.0.to_string();
+    let margins = " ".repeat(points.0.to_string().len().max(0) as usize);
+    for mut text in query.iter_mut() {
+        text.0 = format!(" {}Point: {}", margins, num);
+    }
+}
 
 fn linear_movement(
     mut commands: Commands,
@@ -250,7 +270,6 @@ fn bullet_hit_enemy(
                 if let Ok((enemy_ent, mut health, transform)) = enemies.get_mut(enemy_entity) {
                     health.0 -= 1;
                     if health.0 <= 0 {
-
                         let power_count = rand::random::<u32>() % 3 + 1;
                         const ITEM_SPEED: f32 = 50.0;
 
@@ -259,7 +278,7 @@ fn bullet_hit_enemy(
                             commands.spawn((
                                 PowerItem,
 
-                                Transform::from_translation(transform.translation),
+                                Transform::from_translation(transform.translation.xy().extend(-1.0)),
                                 Text2d::new("P"),
                                 TextFont {
                                     font: font.0.clone(),
@@ -292,7 +311,7 @@ fn bullet_hit_enemy(
                                 },
                                 TextLayout::default(),
                                 TextColor(Color::Srgba(BLUE)),
-                                Transform::from_translation(transform.translation),
+                                Transform::from_translation(transform.translation.xy().extend(-2.0)),
                                 RigidBody::KinematicVelocityBased,
                                 Collider::ball(5.0),
                                 Velocity::linear(Vec2::new(
@@ -633,13 +652,14 @@ fn setup(
         Transform::from_translation(Vec3::new(width / 2.0 * 0.219 + horizontal_margin, 0.0, 1.0)),
     ));
 
+    let info_margin = width / 2.0 * 0.4;
     commands.spawn((
-        Text2d::new("  Player: @@"),
+        Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
 
-        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25, 1.0)),
+        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25, 1.0)),
         PlayerLivesText,
     ));
     commands.spawn((
@@ -648,7 +668,7 @@ fn setup(
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
 
-        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25 - font_size * 1.5, 1.0)),
+        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 1.5, 1.0)),
         PlayerBombsText,
     ));
 
@@ -658,7 +678,7 @@ fn setup(
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
 
-        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25 - font_size * 3.5, 1.0)),
+        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 3.5, 1.0)),
         PlayerPowersText,
     ));
     commands.spawn((
@@ -667,7 +687,7 @@ fn setup(
         TextLayout::default(),
         TextColor(Color::Srgba(WHITE)),
 
-        Transform::from_translation(Vec3::new(width / 2.0 * 0.5, height / 2.0 * 0.25 - font_size * 5.0, 1.0)),
+        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 5.0, 1.0)),
         PlayerPointsText,
     ));
 }
@@ -708,6 +728,8 @@ fn main() {
         .add_systems(Update, single_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
+        .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))
+        .add_systems(Update, update_points_text.run_if(resource_changed::<PlayerPoints>))
         .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyJ)))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
         .add_systems(FixedUpdate, tick_cooldown_timer)

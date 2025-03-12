@@ -8,6 +8,16 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
 
+enum HomingTarget {
+    Player,
+    Enemy,
+}
+#[derive(Component)]
+struct HomingBullet {
+    target: HomingTarget,
+    speed: f32,
+    rotate_speed: f32,
+}
 #[derive(Component)]
 struct JudgePoint;
 #[derive(Component)]
@@ -17,19 +27,9 @@ struct ShootCooldown(Timer);
 #[derive(Component)]
 struct PlayerBullet;
 #[derive(Component)]
-struct PlayerHomingBullet {
-    speed: f32,
-    rotate_speed: f32,
-}
-#[derive(Component)]
 struct Enemy;
 #[derive(Component)]
 struct EnemyBullet;
-#[derive(Component)]
-struct EnemyHomingBullet {
-    speed: f32,
-    rotate_speed: f32,
-}
 #[derive(Component)]
 struct Health(i32);
 #[derive(Component)]
@@ -180,56 +180,36 @@ fn linear_movement(
     }
 }
 
-fn enemy_homing_bullet(
-    mut query: Query<(&mut Velocity, &Transform, &EnemyHomingBullet)>,
-    players: Query<&Transform, With<Player>>,
-    time: Res<Time>,
-) {
-    for (mut velocity, bullet_transform, homing) in query.iter_mut() {
-        let current_dir = velocity.linvel.normalize_or_zero();
-
-        if let Some(target) = players.iter()
-            .min_by(|a, b| {
-                let da = bullet_transform.translation.distance_squared(a.translation);
-                let db = bullet_transform.translation.distance_squared(b.translation);
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-
-            let desired_dir = (target.translation.truncate() - bullet_transform.translation.truncate())
-                .normalize_or_zero();
-
-            let angle_between = current_dir.angle_to(desired_dir);
-            let max_rotate = homing.rotate_speed * time.delta_secs();
-
-            let clamped_angle = angle_between.clamp(-max_rotate, max_rotate);
-            let new_dir = current_dir.rotate(Vec2::from_angle(clamped_angle));
-
-            velocity.linvel = new_dir.normalize_or_zero() * homing.speed;
-        }
-    }
+fn homing_bullet_find_nearest<'a>(
+    reference: Vec3,
+    targets: impl Iterator<Item = &'a Transform>,
+) -> Option<&'a Transform> {
+    targets.min_by(|a, b| {
+        let da = reference.distance_squared(a.translation);
+        let db = reference.distance_squared(b.translation);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
-fn player_homing_bullet(
-    mut query: Query<(&mut Velocity, &Transform, &PlayerHomingBullet)>,
+
+fn homing_bullet(
+    mut query: Query<(&mut Velocity, &Transform, &HomingBullet), Or<(With<EnemyBullet>, With<PlayerBullet>)>>,
+    players: Query<&Transform, With<Player>>,
     enemies: Query<&Transform, With<Enemy>>,
     time: Res<Time>,
 ) {
     for (mut velocity, bullet_transform, homing) in query.iter_mut() {
         let current_dir = velocity.linvel.normalize_or_zero();
 
-        if let Some(target) = enemies.iter()
-            .min_by(|a, b| {
-                let da = bullet_transform.translation.distance_squared(a.translation);
-                let db = bullet_transform.translation.distance_squared(b.translation);
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
+        let target_transform = match homing.target {
+            HomingTarget::Player => homing_bullet_find_nearest(bullet_transform.translation, players.iter()),
+            HomingTarget::Enemy => homing_bullet_find_nearest(bullet_transform.translation, enemies.iter()),
+        };
 
-            let desired_dir = (target.translation.truncate() - bullet_transform.translation.truncate())
-                .normalize_or_zero();
-
+        if let Some(target) = target_transform {
+            let desired_dir = (target.translation.truncate() - bullet_transform.translation.truncate()).normalize_or_zero();
             let angle_between = current_dir.angle_to(desired_dir);
             let max_rotate = homing.rotate_speed * time.delta_secs();
-
             let clamped_angle = angle_between.clamp(-max_rotate, max_rotate);
             let new_dir = current_dir.rotate(Vec2::from_angle(clamped_angle));
 
@@ -257,7 +237,8 @@ fn enemy_homing_shoot(
 
                 commands.spawn((
                     EnemyBullet,
-                    EnemyHomingBullet {
+                    HomingBullet {
+                        target: HomingTarget::Player,
                         speed: shoot.speed,
                         rotate_speed: shoot.rotate_speed,
                     },
@@ -308,7 +289,8 @@ fn support_homing_shoot(
 
             commands.spawn((
                 PlayerBullet,
-                PlayerHomingBullet {
+                HomingBullet {
+                    target: HomingTarget::Enemy,
                     speed: homing.speed,
                     rotate_speed: homing.rotate_speed,
                 },
@@ -1145,8 +1127,7 @@ fn main() {
         .add_systems(FixedUpdate, despawn_enemies)
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(FixedUpdate, item_gravity)
-        .add_systems(FixedUpdate, player_homing_bullet)
-        .add_systems(FixedUpdate, enemy_homing_bullet)
+        .add_systems(FixedUpdate, homing_bullet)
         .add_systems(FixedUpdate, attract_items)
         .add_systems(
             RunFixedMainLoop,

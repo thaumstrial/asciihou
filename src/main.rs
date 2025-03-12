@@ -85,6 +85,40 @@ struct PlayerBombs(pub i32);
 struct PlayerPowers(pub i32);
 #[derive(Resource)]
 struct PlayerPoints(pub i32);
+fn attract_items(
+    rapier_context: ReadDefaultRapierContext,
+    player_query: Query<(Entity, &Transform), With<Player>>,
+    mut item_query: Query<(&mut Velocity, &Transform), Or<(With<PowerItem>, With<PointItem>)>>,
+) {
+    const ATTRACT_RADIUS: f32 = 80.0;
+    const ATTRACT_SPEED: f32 = 100.0;
+
+    if let Ok((player_entity, player_transform)) = player_query.get_single() {
+        let player_pos = player_transform.translation.truncate();
+        let shape = Collider::ball(ATTRACT_RADIUS);
+
+        rapier_context.intersections_with_shape(
+            player_pos,
+            0.0,
+            &shape,
+            QueryFilter {
+                exclude_rigid_body: Some(player_entity),
+                groups: Some(CollisionGroups::new(Group::ALL, Group::GROUP_6)),
+                ..default()
+            },
+            |item_entity| {
+                if let Ok((mut velocity, item_pos)) = item_query.get_mut(item_entity) {
+                    let dir = (player_pos - item_pos.translation.truncate()).normalize_or_zero();
+                    let distance = player_pos.distance(item_pos.translation.truncate());
+                    let strength = 1.0 - (distance / ATTRACT_RADIUS);
+                    let attract_speed = ATTRACT_SPEED * (1.0 + strength.clamp(0.0, 1.0));
+                    velocity.linvel = dir * attract_speed;
+                }
+                true
+            }
+        );
+    }
+}
 
 fn update_lives_text(
     lives: Res<PlayerLives>,
@@ -111,7 +145,7 @@ fn update_powers_text(
     mut query: Query<&mut Text2d, With<PlayerPowersText>>,
 ) {
     let num = powers.0.to_string();
-    let margins = " ".repeat(powers.0.to_string().len().max(0) as usize);
+    let margins = " ".repeat(powers.0.to_string().len().max(0));
     for mut text in query.iter_mut() {
         text.0 = format!(" {}Power: {}", margins, num);
     }
@@ -121,7 +155,7 @@ fn update_points_text(
     mut query: Query<&mut Text2d, With<PlayerPointsText>>,
 ) {
     let num = points.0.to_string();
-    let margins = " ".repeat(points.0.to_string().len().max(0) as usize);
+    let margins = " ".repeat(points.0.to_string().len().max(0));
     for mut text in query.iter_mut() {
         text.0 = format!(" {}Point: {}", margins, num);
     }
@@ -332,13 +366,13 @@ fn spawn_support_units(
     font: Res<AsciiFont>,
     powers: Res<PlayerPowers>,
     player_query: Query<(Entity, &Transform), With<Player>>,
-    support_query: Query<(Entity), With<SupportUnit>>,
+    support_query: Query<Entity, With<SupportUnit>>,
 ) {
     if powers.0 < 1 || support_query.iter().count() >= 2 {
         return;
     }
 
-    if let Ok((player_entity, player_transform)) = player_query.get_single() {
+    if let Ok((player_entity, _)) = player_query.get_single() {
         let offsets = [Vec2::new(30.0, 30.0), Vec2::new(-30.0, 30.0)];
 
         for offset_pos in offsets {
@@ -743,7 +777,7 @@ fn player_shoot(
             };
 
             for i in 0..num_bullets {
-                let offset = i as i32 - (num_bullets as i32 - 1) / 2;
+                let offset = i - (num_bullets - 1) / 2;
                 let angle_rad = (offset as f32) * (angle_step_deg as f32).to_radians();
                 let rotated_direction = Vec2::from_angle(angle_rad).rotate(BASE_DIRECTION);
 
@@ -1029,6 +1063,7 @@ fn main() {
         .add_systems(FixedUpdate, item_gravity)
         .add_systems(FixedUpdate, player_homing_bullet)
         .add_systems(FixedUpdate, enemy_homing_bullet)
+        .add_systems(FixedUpdate, attract_items)
         .add_systems(
             RunFixedMainLoop,
             (

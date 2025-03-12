@@ -1,5 +1,6 @@
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
+use bevy::color::palettes::tailwind::{BLUE_400, RED_400};
 use bevy::DefaultPlugins;
 use bevy::input::common_conditions::*;
 use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
@@ -417,17 +418,10 @@ fn bullet_hit_enemy(
                             commands.spawn((
                                 PowerItem,
 
+                                Sprite::from_color(Color::Srgba(RED_400), Vec2::new(20.0, 20.0)),
                                 Transform::from_translation(transform.translation.xy().extend(-1.0)),
-                                Text2d::new("P"),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 25.0,
-                                    ..default()
-                                },
-                                TextLayout::default(),
-                                TextColor(Color::Srgba(RED)),
 
-                                Collider::ball(6.0),
+                                Collider::ball(8.0),
                                 RigidBody::KinematicVelocityBased,
                                 Velocity::linear(Vec2::new(
                                     (rand::random::<f32>() - 0.5) * ITEM_SPEED,
@@ -435,31 +429,49 @@ fn bullet_hit_enemy(
                                 )),
                                 ActiveEvents::COLLISION_EVENTS,
                                 CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
-                            ));
+                            )).with_children(|builder| {
+                                builder.spawn((
+                                    Text2d::new("P"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 25.0,
+                                        ..default()
+                                    },
+                                    TextLayout::default(),
+                                    TextColor(Color::Srgba(WHITE)),
+                                    Transform::from_translation(Vec3::Z),
+                                ));
+                            });
                         }
 
                         let point_count = rand::random::<u32>() % 3 + 1;
                         for _ in 0..point_count {
                             commands.spawn((
                                 PointItem,
-                                Text2d::new("%"),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 25.0,
-                                    ..default()
-                                },
-                                TextLayout::default(),
-                                TextColor(Color::Srgba(BLUE)),
-                                Transform::from_translation(transform.translation.xy().extend(-2.0)),
+
+                                Sprite::from_color(Color::Srgba(BLUE_400), Vec2::new(20.0, 20.0)),
+                                Transform::from_translation(transform.translation.xy().extend(-3.0)),
                                 RigidBody::KinematicVelocityBased,
-                                Collider::ball(6.0),
+                                Collider::ball(8.0),
                                 Velocity::linear(Vec2::new(
                                     (rand::random::<f32>() - 0.5) * ITEM_SPEED,
                                     150.0 + rand::random::<f32>() * 50.0
                                 )),
                                 CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
                                 ActiveEvents::COLLISION_EVENTS,
-                            ));
+                            )).with_children(|builder| {
+                                builder.spawn((
+                                    Text2d::new("%"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 25.0,
+                                        ..default()
+                                    },
+                                    TextLayout::default(),
+                                    TextColor(Color::Srgba(WHITE)),
+                                    Transform::from_translation(Vec3::Z),
+                                ));
+                            });
                         }
 
                         commands.entity(enemy_ent).despawn();
@@ -515,10 +527,10 @@ fn item_hit_player(
 
             if power_items.get(item_entity).is_ok() {
                 powers.0 += 1;
-                commands.entity(item_entity).despawn();
+                commands.entity(item_entity).despawn_recursive();
             } else if point_items.get(item_entity).is_ok() {
                 points.0 += 1;
-                commands.entity(item_entity).despawn();
+                commands.entity(item_entity).despawn_recursive();
             }
         }
     }

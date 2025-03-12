@@ -406,15 +406,13 @@ fn tick_cooldown_timer(
     }
 }
 
-fn despawn_bullets_and_items(
+fn despawn_bullets(
     mut commands: Commands,
     query: Query<
         (Entity, &Transform),
         Or<(
             With<PlayerBullet>,
             With<EnemyBullet>,
-            With<PowerItem>,
-            With<PointItem>
         )>
     >,
     window: Res<WindowSize>,
@@ -422,6 +420,30 @@ fn despawn_bullets_and_items(
     for (entity, transform) in query.iter() {
         let pos = transform.translation;
         if pos.x.abs() > window.width / 2.0 || pos.y.abs() > window.height / 2.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn despawn_items(
+    mut commands: Commands,
+    query: Query<
+        (Entity, &Transform),
+        Or<(
+            With<PowerItem>,
+            With<PointItem>,
+        )>
+    >,
+    window: Res<WindowSize>,
+) {
+    const EXTRA_MARGIN: f32 = 200.0;
+
+    let max_x = window.width / 2.0 + EXTRA_MARGIN;
+    let max_y = window.height / 2.0 + EXTRA_MARGIN;
+
+    for (entity, transform) in query.iter() {
+        let pos = transform.translation;
+        if pos.x.abs() > max_x || pos.y.abs() > max_y {
             commands.entity(entity).despawn();
         }
     }
@@ -746,7 +768,8 @@ fn main() {
         .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyJ)))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
         .add_systems(FixedUpdate, tick_cooldown_timer)
-        .add_systems(FixedUpdate, despawn_bullets_and_items)
+        .add_systems(FixedUpdate, despawn_bullets)
+        .add_systems(FixedUpdate, despawn_items)
         .add_systems(FixedUpdate, despawn_enemies)
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(FixedUpdate, item_gravity)

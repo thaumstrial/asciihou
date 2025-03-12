@@ -9,6 +9,8 @@ use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
 
 #[derive(Component)]
+struct JudgePoint;
+#[derive(Component)]
 struct Player;
 #[derive(Component)]
 struct ShootCooldown(Timer);
@@ -373,7 +375,10 @@ fn spawn_support_units(
     }
 
     if let Ok((player_entity, _)) = player_query.get_single() {
-        let offsets = [Vec2::new(30.0, 30.0), Vec2::new(-30.0, 30.0)];
+        let offsets = [
+            Vec3::new(30.0, 0.0, 0.0),
+            Vec3::new(-30.0, 0.0, 0.0)
+        ];
 
         for offset_pos in offsets {
             commands.spawn((
@@ -389,10 +394,10 @@ fn spawn_support_units(
                     font_size: 30.0,
                     ..default()
                 },
-                Transform::from_translation(offset_pos.extend(0.0)),
+                Transform::from_translation(offset_pos),
                 RigidBody::KinematicVelocityBased,
                 Velocity {
-                    angvel: 2.0,
+                    angvel: 2.0 * (-offset_pos.x.signum()),
                     ..default()
                 },
                 TextLayout::default(),
@@ -819,11 +824,14 @@ fn clamp_player_position(
 
 
 fn player_movement(
+    mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Velocity, With<Player>>,
+    mut player_query: Query<(Entity, &mut Velocity), With<Player>>,
+    font: Res<AsciiFont>,
+    judge_point_query: Query<Entity, With<JudgePoint>>,
 ) {
     const SPEED: f32 = 210.0;
-    for mut velocity in query.iter_mut() {
+    for (player_entity, mut velocity) in player_query.iter_mut() {
         let mut direction = Vec2::ZERO;
 
         if keyboard_input.pressed(KeyCode::KeyW) {
@@ -842,8 +850,27 @@ fn player_movement(
         direction = direction.normalize_or_zero();
 
         let speed = if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            if judge_point_query.is_empty() {
+                commands.spawn((
+                    JudgePoint,
+                    Text2d::new("·"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 60.0,
+                        ..default()
+                    },
+                    TextLayout::default(),
+                    TextColor(Color::Srgba(WHITE)),
+                    Transform::from_translation(Vec3::new(0.0, 5.0, 1.0)),
+                )).set_parent(player_entity);
+            }
+
             SPEED * 0.3
         } else {
+            for entity in judge_point_query.iter() {
+                commands.entity(entity).despawn();
+            }
+
             SPEED
         };
 
@@ -909,7 +936,7 @@ fn setup(
 
         RigidBody::Dynamic,
         Sensor,
-        Collider::ball(10.0),
+        Collider::ball(5.0),
         Velocity::zero(),
 
         ActiveEvents::COLLISION_EVENTS,

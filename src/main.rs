@@ -336,6 +336,36 @@ fn bullet_hit_player(
         }
     }
 }
+fn item_hit_player(
+    mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    players: Query<Entity, With<Player>>,
+    power_items: Query<Entity, With<PowerItem>>,
+    point_items: Query<Entity, With<PointItem>>,
+    mut powers: ResMut<PlayerPowers>,
+    mut points: ResMut<PlayerPoints>,
+) {
+    for event in collision_events.read() {
+        if let CollisionEvent::Started(entity1, entity2, _) = event {
+            let (_, item_entity) = if players.get(*entity1).is_ok() {
+                (*entity1, *entity2)
+            } else if players.get(*entity2).is_ok() {
+                (*entity2, *entity1)
+            } else {
+                continue;
+            };
+
+            if power_items.get(item_entity).is_ok() {
+                powers.0 += 1;
+                commands.entity(item_entity).despawn();
+            } else if point_items.get(item_entity).is_ok() {
+                points.0 += 1;
+                commands.entity(item_entity).despawn();
+            }
+        }
+    }
+}
+
 
 
 fn toggle_debug_render(
@@ -519,6 +549,7 @@ fn setup(
     commands.insert_resource(PlayerLives(2));
     commands.insert_resource(PlayerBombs(3));
     commands.insert_resource(PlayerPoints(0));
+    commands.insert_resource(PlayerPowers(0));
 
     let font_size = 40.0;
     let text_font = TextFont {
@@ -673,6 +704,7 @@ fn main() {
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit_enemy)
         .add_systems(Update, bullet_hit_player)
+        .add_systems(Update, item_hit_player)
         .add_systems(Update, single_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))

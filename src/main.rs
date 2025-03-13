@@ -97,7 +97,8 @@ struct SingleShoot {
     cooldown: Timer,
 }
 #[derive(Component)]
-struct EnemyFanShoot {
+struct FanShoot {
+    bullet: BulletInfo,
     num_bullets: i32,
     angle_deg: f32,
     direction: Vec2,
@@ -287,11 +288,10 @@ fn single_shoot(
     }
 }
 
-fn enemy_fan_shoot(
+fn fan_shoot(
     mut commands: Commands,
-    mut query: Query<(&Transform, &mut EnemyFanShoot)>,
+    mut query: Query<(&GlobalTransform, &mut FanShoot)>,
     time: Res<Time>,
-    font: Res<AsciiFont>,
 ) {
     for (transform, mut shoot) in query.iter_mut() {
         shoot.cooldown.tick(time.delta());
@@ -306,23 +306,13 @@ fn enemy_fan_shoot(
             let angle_rad = (offset_index as f32) * shoot.angle_deg.to_radians();
             let direction = Vec2::from_angle(angle_rad).rotate(base_direction);
 
-            commands.spawn((
-                BulletTarget::Player,
-                Transform::from_translation(transform.translation),
-                Text2d::new("x"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 30.0,
-                    ..default()
-                },
-                TextLayout::default(),
-                TextColor(Color::Srgba(GREEN_400)),
-                Collider::ball(5.0),
-                RigidBody::KinematicVelocityBased,
+            let mut entity = commands.spawn((
+                shoot.bullet.to_bundle(),
+                Transform::from_translation(transform.translation()),
                 Velocity::linear(direction),
-                ActiveEvents::COLLISION_EVENTS,
-                CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
             ));
+
+            shoot.bullet.bullet_type.insert_into(&mut entity);
         }
 
         shoot.cooldown.reset();
@@ -504,7 +494,20 @@ fn spawn_enemies(
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.3, TimerMode::Repeating),
                 });
             } else {
-                enemy_entity.insert(EnemyFanShoot {
+                enemy_entity.insert(FanShoot {
+                    bullet: BulletInfo {
+                        bullet_type: BulletType::Normal,
+                        target: BulletTarget::Player,
+                        text: Text2d::new("x"),
+                        text_font: TextFont {
+                            font: font.0.clone(),
+                            font_size: 30.0,
+                            ..default()
+                        },
+                        text_layout: TextLayout::default(),
+                        text_color: TextColor(Color::Srgba(GREEN_400)),
+                        collider: Collider::ball(5.0),
+                    },
                     num_bullets: rand::random::<i32>().abs()     % 6 + 3,
                     angle_deg: 20.0 * rand::random::<f32>() + 10.0,
                     direction: shoot_direction * (rand::random::<f32>() * 0.5 + 1.5),
@@ -1082,7 +1085,7 @@ fn main() {
         .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))
         .add_systems(Update, item_hit_player)
         .add_systems(Update, single_shoot)
-        .add_systems(Update, enemy_fan_shoot)
+        .add_systems(Update, fan_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
         .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))

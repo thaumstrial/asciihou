@@ -266,14 +266,14 @@ fn homing_bullet(
 
 fn single_shoot(
     mut commands: Commands,
-    mut query: Query<(&Transform, &mut SingleShoot)>,
+    mut query: Query<(&GlobalTransform, &mut SingleShoot)>,
     time: Res<Time>,
 ) {
     for (transform, mut single_shot) in query.iter_mut() {
         single_shot.cooldown.tick(time.delta());
 
         if single_shot.cooldown.finished() {
-            let spawn_pos = transform.translation;
+            let spawn_pos = transform.translation();
 
             let mut entity = commands.spawn((
                 single_shot.bullet.to_bundle(),
@@ -349,11 +349,26 @@ fn spawn_support_units(
         for offset_pos in offsets {
             commands.spawn((
                 SupportUnit,
-                // SupportHomingShoot {
-                //     speed: 800.0,
-                //     rotate_speed: 1.0,
-                //     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating)
-                // },
+                SingleShoot {
+                    bullet: BulletInfo {
+                        bullet_type: BulletType::Homing(HomingBullet {
+                            speed: 800.0,
+                            rotate_speed: 1.5,
+                        }),
+                        target: BulletTarget::Enemy,
+                        text: Text2d::new("*"),
+                        text_font: TextFont {
+                            font: font.0.clone(),
+                            font_size: 30.0,
+                            ..default()
+                        },
+                        text_layout: Default::default(),
+                        text_color: TextColor(Color::Srgba(PURPLE)),
+                        collider: Collider::ball(5.0),
+                    },
+                    direction: Vec2::Y * 800.0,
+                    cooldown: Timer::from_seconds(0.2, TimerMode::Repeating),
+                },
                 Text2d::new("N"),
                 TextFont {
                     font: font.0.clone(),

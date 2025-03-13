@@ -902,16 +902,16 @@ fn player_movement(
     for (player_entity, mut velocity) in player_query.iter_mut() {
         let mut direction = Vec2::ZERO;
 
-        if keyboard_input.pressed(KeyCode::KeyW) {
+        if keyboard_input.pressed(KeyCode::ArrowUp) {
             direction.y += 1.0;
         }
-        if keyboard_input.pressed(KeyCode::KeyS) {
+        if keyboard_input.pressed(KeyCode::ArrowDown) {
             direction.y -= 1.0;
         }
-        if keyboard_input.pressed(KeyCode::KeyA) {
+        if keyboard_input.pressed(KeyCode::ArrowLeft) {
             direction.x -= 1.0;
         }
-        if keyboard_input.pressed(KeyCode::KeyD) {
+        if keyboard_input.pressed(KeyCode::ArrowRight) {
             direction.x += 1.0;
         }
 
@@ -1144,8 +1144,8 @@ fn main() {
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
         .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, update_points_text.run_if(resource_changed::<PlayerPoints>))
-        .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyJ)))
-        .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
+        .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyZ)))
+        .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyX)))
         .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, enemy_death_particles)

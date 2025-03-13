@@ -9,11 +9,20 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 enum BulletTarget {
     Player,
     Enemy,
 }
+impl BulletTarget {
+    pub fn collision_groups(&self) -> CollisionGroups {
+        match self {
+            BulletTarget::Player => CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
+            BulletTarget::Enemy => CollisionGroups::new(Group::GROUP_2, Group::GROUP_4),
+        }
+    }
+}
+
 #[derive(Component)]
 struct HomingBullet {
     speed: f32,
@@ -23,6 +32,43 @@ struct HomingBullet {
 enum BulletType {
     Normal,
     Homing(HomingBullet),
+}
+#[derive(Bundle)]
+pub struct BulletBundle {
+    pub target: BulletTarget,
+    pub text: Text2d,
+    pub text_font: TextFont,
+    pub text_layout: TextLayout,
+    pub text_color: TextColor,
+    pub collider: Collider,
+    pub rigid_body: RigidBody,
+    pub active_events: ActiveEvents,
+    pub collision_groups: CollisionGroups,
+}
+
+struct BulletInfo {
+    bullet_type: BulletType,
+    target: BulletTarget,
+    text: Text2d,
+    text_font: TextFont,
+    text_layout: TextLayout,
+    text_color: TextColor,
+    collider: Collider,
+}
+impl BulletInfo {
+    pub fn to_bundle(&self) -> BulletBundle {
+        BulletBundle {
+            target: self.target.clone(),
+            text: self.text.clone(),
+            text_font: self.text_font.clone(),
+            text_layout: self.text_layout.clone(),
+            text_color: self.text_color.clone(),
+            collider: self.collider.clone(),
+            rigid_body: RigidBody::KinematicVelocityBased,
+            active_events: ActiveEvents::COLLISION_EVENTS,
+            collision_groups: self.target.collision_groups(),
+        }
+    }
 }
 #[derive(Component)]
 struct JudgePoint;
@@ -37,8 +83,8 @@ struct Health(i32);
 #[derive(Component)]
 struct LinearMovement(Vec2);
 #[derive(Component)]
-struct EnemySingleShoot {
-    bullet: BulletType,
+struct SingleShoot {
+    bullet: BulletInfo,
     direction: Vec2,
     cooldown: Timer,
 }
@@ -210,36 +256,20 @@ fn homing_bullet(
     }
 }
 
-fn enemy_single_shoot(
+fn single_shoot(
     mut commands: Commands,
-    mut query: Query<(&Transform, &mut EnemySingleShoot)>,
+    mut query: Query<(&Transform, &mut SingleShoot)>,
     time: Res<Time>,
-    font: Res<AsciiFont>,
 ) {
     for (transform, mut single_shot) in query.iter_mut() {
         single_shot.cooldown.tick(time.delta());
 
         if single_shot.cooldown.finished() {
             let spawn_pos = transform.translation;
-
             commands.spawn((
-                BulletTarget::Player,
-
+                single_shot.bullet.to_bundle(),
                 Transform::from_translation(spawn_pos),
-                Text2d::new("x"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 30.0,
-                    ..default()
-                },
-                TextLayout::default(),
-                TextColor(Color::Srgba(WHITE)),
-
-                Collider::ball(5.0),
-                RigidBody::KinematicVelocityBased,
                 Velocity::linear(single_shot.direction),
-                ActiveEvents::COLLISION_EVENTS,
-                CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
             ));
 
             single_shot.cooldown.reset();
@@ -410,14 +440,44 @@ fn spawn_enemies(
             let shoot_type = rand::random::<f32>();
 
             if shoot_type < 0.3 {
-                // enemy_entity.insert(EnemyHomingShoot {
-                //     speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
-                //     rotate_speed: rand::random::<f32>() * 0.4,
-                //     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
-                // });
+                enemy_entity.insert(SingleShoot {
+                    bullet: BulletInfo {
+                        bullet_type: BulletType::Homing(HomingBullet {
+                            speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
+                            rotate_speed: rand::random::<f32>() * 0.4,
+                        }),
+                        target: BulletTarget::Player,
+                        text: Text2d::new("x"),
+                        text_font: TextFont {
+                            font: font.0.clone(),
+                            font_size: 30.0,
+                            ..default()
+                        },
+                        text_layout: TextLayout::default(),
+                        text_color: TextColor(Color::Srgba(WHITE)),
+                        collider: Collider::ball(5.0),
+                    },
+                    direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
+                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
+                });
             } else if shoot_type < 0.6 {
-                enemy_entity.insert(EnemySingleShoot {
-                    bullet: BulletType::Normal,
+                enemy_entity.insert(SingleShoot {
+                    bullet: BulletInfo {
+                        bullet_type: BulletType::Homing(HomingBullet {
+                            speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
+                            rotate_speed: rand::random::<f32>() * 0.4,
+                        }),
+                        target: BulletTarget::Player,
+                        text: Text2d::new("x"),
+                        text_font: TextFont {
+                            font: font.0.clone(),
+                            font_size: 30.0,
+                            ..default()
+                        },
+                        text_layout: TextLayout::default(),
+                        text_color: TextColor(Color::Srgba(WHITE)),
+                        collider: Collider::ball(5.0),
+                    },
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
                 });
@@ -999,7 +1059,7 @@ fn main() {
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))
         .add_systems(Update, item_hit_player)
-        .add_systems(Update, enemy_single_shoot)
+        .add_systems(Update, single_shoot)
         .add_systems(Update, enemy_fan_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))

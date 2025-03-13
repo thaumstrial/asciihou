@@ -23,27 +23,35 @@ impl BulletTarget {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct HomingBullet {
     speed: f32,
     rotate_speed: f32,
 }
-#[derive(Component)]
 enum BulletType {
     Normal,
     Homing(HomingBullet),
 }
+impl BulletType {
+    pub fn insert_into(&self, entity: &mut EntityCommands) {
+        match self {
+            BulletType::Normal => {}
+            BulletType::Homing(homing) => { entity.insert(homing.clone()); },
+
+        }
+    }
+}
 #[derive(Bundle)]
-pub struct BulletBundle {
-    pub target: BulletTarget,
-    pub text: Text2d,
-    pub text_font: TextFont,
-    pub text_layout: TextLayout,
-    pub text_color: TextColor,
-    pub collider: Collider,
-    pub rigid_body: RigidBody,
-    pub active_events: ActiveEvents,
-    pub collision_groups: CollisionGroups,
+struct BulletBundle {
+    target: BulletTarget,
+    text: Text2d,
+    text_font: TextFont,
+    text_layout: TextLayout,
+    text_color: TextColor,
+    collider: Collider,
+    rigid_body: RigidBody,
+    active_events: ActiveEvents,
+    collision_groups: CollisionGroups,
 }
 
 struct BulletInfo {
@@ -266,11 +274,13 @@ fn single_shoot(
 
         if single_shot.cooldown.finished() {
             let spawn_pos = transform.translation;
-            commands.spawn((
+
+            let mut entity = commands.spawn((
                 single_shot.bullet.to_bundle(),
                 Transform::from_translation(spawn_pos),
                 Velocity::linear(single_shot.direction),
             ));
+            single_shot.bullet.bullet_type.insert_into(&mut entity);
 
             single_shot.cooldown.reset();
         }
@@ -442,10 +452,7 @@ fn spawn_enemies(
             if shoot_type < 0.3 {
                 enemy_entity.insert(SingleShoot {
                     bullet: BulletInfo {
-                        bullet_type: BulletType::Homing(HomingBullet {
-                            speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
-                            rotate_speed: rand::random::<f32>() * 0.4,
-                        }),
+                        bullet_type: BulletType::Normal,
                         target: BulletTarget::Player,
                         text: Text2d::new("x"),
                         text_font: TextFont {
@@ -464,8 +471,8 @@ fn spawn_enemies(
                 enemy_entity.insert(SingleShoot {
                     bullet: BulletInfo {
                         bullet_type: BulletType::Homing(HomingBullet {
-                            speed: (shoot_direction * (rand::random::<f32>() * 2.0 + 1.0)).length(),
-                            rotate_speed: rand::random::<f32>() * 0.4,
+                            speed: shoot_direction.length() * (rand::random::<f32>() * 1.0 + 1.5),
+                            rotate_speed: rand::random::<f32>() * 0.5 + 0.3,
                         }),
                         target: BulletTarget::Player,
                         text: Text2d::new("x"),
@@ -475,11 +482,11 @@ fn spawn_enemies(
                             ..default()
                         },
                         text_layout: TextLayout::default(),
-                        text_color: TextColor(Color::Srgba(WHITE)),
+                        text_color: TextColor(Color::Srgba(GOLD)),
                         collider: Collider::ball(5.0),
                     },
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
-                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
+                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.3, TimerMode::Repeating),
                 });
             } else {
                 enemy_entity.insert(EnemyFanShoot {
@@ -879,7 +886,7 @@ fn auto_zoom_camera(
         let scale_x = event.width / base_width;
         let scale_y = event.height / base_height;
 
-        let new_scale = scale_x.min(scale_y); // 保持等比缩放，防止拉伸
+        let new_scale = scale_x.min(scale_y);
 
         for mut projection in query.iter_mut() {
             projection.scale = 1.0 / new_scale;

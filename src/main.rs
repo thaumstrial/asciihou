@@ -23,6 +23,8 @@ impl BulletTarget {
     }
 }
 
+#[derive(Component)]
+struct EnemyDeathParticle(Timer);
 #[derive(Component, Clone)]
 struct HomingBullet {
     speed: f32,
@@ -543,6 +545,29 @@ fn item_gravity(
     }
 }
 
+fn enemy_death_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut EnemyDeathParticle, &mut TextColor, &mut Velocity)>,
+) {
+    const DECAY_COEFFICIENT: f32 = 1.5;
+    for (entity, mut timer, mut color, mut velocity) in query.iter_mut() {
+        timer.0.tick(time.delta());
+
+        let progress = timer.0.elapsed_secs() / timer.0.duration().as_secs_f32();
+        let alpha = (1.0 - progress).clamp(0.0, 1.0);
+
+        color.0.set_alpha(alpha);
+
+        let decay = 1.0 - time.delta_secs() * DECAY_COEFFICIENT;
+        velocity.linvel *= decay.clamp(0.0, 1.0);
+
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 fn match_bullet_hit_pair<
     Target: Component,
     D: QueryData
@@ -647,7 +672,36 @@ fn bullet_hit(
                                     ));
                                 });
                             }
-                            commands.entity(enemy_ent).despawn_recursive();
+
+                            let num_particles = rand::random::<i32>().abs() % 9 + 8;
+                            for _ in 0..num_particles {
+                                let char = if rand::random::<bool>() { "0" } else { "1" };
+                                let gray = rand::random::<f32>();
+                                let angle = rand::random::<f32>() * std::f32::consts::TAU;
+                                let speed = rand::random::<f32>() * 50.0 + 50.0;
+                                let dir = Vec2::from_angle(angle) * speed;
+
+                                commands.spawn((
+                                    EnemyDeathParticle(Timer::from_seconds(rand::random::<f32>() * 2.0 + 1.0, TimerMode::Once)),
+                                    Text2d::new(char),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 20.0,
+                                        ..default()
+                                    },
+                                    TextLayout::default(),
+                                    TextColor(Color::srgba(gray, gray, gray, 1.0)),
+                                    Transform::from_translation(transform.translation),
+                                    RigidBody::KinematicVelocityBased,
+                                    Velocity {
+                                        linvel: dir,
+                                        angvel: rand::random::<f32>() * 10.0 - 2.0,
+                                    },
+                                ));
+                            }
+
+                            // before despawn enemy
+                            commands.entity(enemy_ent).despawn();
                         }
                     }
                     commands.entity(bullet_entity).despawn_recursive();
@@ -1083,7 +1137,7 @@ fn main() {
         .add_systems(Update, linear_movement)
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))
-        .add_systems(Update, item_hit_player)
+        .add_systems(Update, item_hit_player.run_if(on_event::<CollisionEvent>))
         .add_systems(Update, single_shoot)
         .add_systems(Update, fan_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
@@ -1094,6 +1148,7 @@ fn main() {
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyK)))
         .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
+        .add_systems(Update, enemy_death_particles)
         .add_systems(FixedUpdate, tick_cooldown_timer)
         .add_systems(FixedUpdate, despawn_bullets)
         .add_systems(FixedUpdate, despawn_items)

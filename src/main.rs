@@ -9,15 +9,20 @@ use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
 
-enum HomingTarget {
+#[derive(Component)]
+enum BulletTarget {
     Player,
     Enemy,
 }
 #[derive(Component)]
 struct HomingBullet {
-    target: HomingTarget,
     speed: f32,
     rotate_speed: f32,
+}
+#[derive(Component)]
+enum BulletType {
+    Normal,
+    Homing(HomingBullet),
 }
 #[derive(Component)]
 struct JudgePoint;
@@ -26,17 +31,14 @@ struct Player;
 #[derive(Component)]
 struct ShootCooldown(Timer);
 #[derive(Component)]
-struct PlayerBullet;
-#[derive(Component)]
 struct Enemy;
-#[derive(Component)]
-struct EnemyBullet;
 #[derive(Component)]
 struct Health(i32);
 #[derive(Component)]
 struct LinearMovement(Vec2);
 #[derive(Component)]
 struct EnemySingleShoot {
+    bullet: BulletType,
     direction: Vec2,
     cooldown: Timer,
 }
@@ -47,6 +49,7 @@ struct EnemyFanShoot {
     direction: Vec2,
     cooldown: Timer,
 }
+
 #[derive(Component)]
 struct PlayerLivesText;
 #[derive(Component)]
@@ -59,6 +62,7 @@ struct PlayerPointsText;
 struct PowerItem;
 #[derive(Component)]
 struct PointItem;
+
 #[derive(Component)]
 struct SupportUnit;
 #[derive(Resource)]
@@ -181,17 +185,17 @@ fn homing_bullet_find_nearest<'a>(
 
 
 fn homing_bullet(
-    mut query: Query<(&mut Velocity, &Transform, &HomingBullet), Or<(With<EnemyBullet>, With<PlayerBullet>)>>,
+    mut query: Query<(&mut Velocity, &Transform, &HomingBullet, &BulletTarget)>,
     players: Query<&Transform, With<Player>>,
     enemies: Query<&Transform, With<Enemy>>,
     time: Res<Time>,
 ) {
-    for (mut velocity, bullet_transform, homing) in query.iter_mut() {
+    for (mut velocity, bullet_transform, homing, target) in query.iter_mut() {
         let current_dir = velocity.linvel.normalize_or_zero();
 
-        let target_transform = match homing.target {
-            HomingTarget::Player => homing_bullet_find_nearest(bullet_transform.translation, players.iter()),
-            HomingTarget::Enemy => homing_bullet_find_nearest(bullet_transform.translation, enemies.iter()),
+        let target_transform = match target {
+            BulletTarget::Player => homing_bullet_find_nearest(bullet_transform.translation, players.iter()),
+            BulletTarget::Enemy => homing_bullet_find_nearest(bullet_transform.translation, enemies.iter()),
         };
 
         if let Some(target) = target_transform {
@@ -219,7 +223,7 @@ fn enemy_single_shoot(
             let spawn_pos = transform.translation;
 
             commands.spawn((
-                EnemyBullet,
+                BulletTarget::Player,
 
                 Transform::from_translation(spawn_pos),
                 Text2d::new("x"),
@@ -263,7 +267,7 @@ fn enemy_fan_shoot(
             let direction = Vec2::from_angle(angle_rad).rotate(base_direction);
 
             commands.spawn((
-                EnemyBullet,
+                BulletTarget::Player,
                 Transform::from_translation(transform.translation),
                 Text2d::new("x"),
                 TextFont {
@@ -413,6 +417,7 @@ fn spawn_enemies(
                 // });
             } else if shoot_type < 0.6 {
                 enemy_entity.insert(EnemySingleShoot {
+                    bullet: BulletType::Normal,
                     direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
                     cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
                 });
@@ -454,38 +459,39 @@ fn item_gravity(
 }
 
 fn match_bullet_hit_pair<
-    Bullet: Component,
     Target: Component,
-    T: QueryData
+    D: QueryData
 >(
     entity1: Entity,
     entity2: Entity,
-    query1: &Query<Entity, With<Bullet>>,
-    query2: &Query<T, With<Target>>,
+    bullets: &Query<(Entity, &BulletTarget)>,
+    targets: &Query<D, With<Target>>,
 ) -> Option<(Entity, Entity)> {
-    if query1.get(entity1).is_ok() && query2.get(entity2).is_ok() {
+    if bullets.get(entity1).is_ok() && targets.get(entity2).is_ok() {
         Some((entity1, entity2))
-    } else if query1.get(entity2).is_ok() && query2.get(entity1).is_ok() {
+    } else if bullets.get(entity2).is_ok() && targets.get(entity1).is_ok() {
         Some((entity2, entity1))
     } else {
         None
     }
 }
 
-fn bullet_hit_enemy(
+fn bullet_hit(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
+
     mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
-    bullets: Query<Entity, With<PlayerBullet>>,
+    player: Query<Entity, With<Player>>,
+    bullets: Query<(Entity, &BulletTarget)>,
+
+    mut lives: ResMut<PlayerLives>,
     font: Res<AsciiFont>,
 ) {
     for event in collision_events.read() {
         match event {
             CollisionEvent::Started(entity1, entity2, _) => {
-
                 if let Some((bullet_entity, enemy_entity)) =
                     match_bullet_hit_pair::<
-                        PlayerBullet,
                         Enemy,
                         (Entity, &mut Health, &Transform)
                     >(*entity1, *entity2, &bullets, &enemies)
@@ -560,6 +566,14 @@ fn bullet_hit_enemy(
                         }
                     }
                     commands.entity(bullet_entity).despawn_recursive();
+                } else if let Some((bullet_entity, _ )) =
+                    match_bullet_hit_pair::<
+                        Player,
+                        Entity
+                    >(*entity1, *entity2, &bullets, &player)
+                {
+                    lives.0 = (lives.0 - 1).max(0);
+                    commands.entity(bullet_entity).despawn_recursive();
                 }
 
             }
@@ -568,28 +582,6 @@ fn bullet_hit_enemy(
     }
 }
 
-fn bullet_hit_player(
-    mut commands: Commands,
-    mut collision_events: EventReader<CollisionEvent>,
-    player_query: Query<Entity, With<Player>>,
-    bullets: Query<Entity, With<EnemyBullet>>,
-    mut lives: ResMut<PlayerLives>,
-) {
-    for event in collision_events.read() {
-        if let CollisionEvent::Started(entity1, entity2, _) = event {
-            if let Some((bullet_entity, _)) =
-                match_bullet_hit_pair::<
-                    EnemyBullet,
-                    Player,
-                    Entity,
-                >(*entity1, *entity2, &bullets, &player_query)
-            {
-                lives.0 = (lives.0 - 1).max(0);
-                commands.entity(bullet_entity).despawn_recursive();
-            }
-        }
-    }
-}
 fn item_hit_player(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
@@ -664,10 +656,7 @@ fn despawn_bullets(
     mut commands: Commands,
     query: Query<
         (Entity, &Transform),
-        Or<(
-            With<PlayerBullet>,
-            With<EnemyBullet>,
-        )>
+        With<BulletTarget>
     >,
     window: Res<WindowSize>,
 ) {
@@ -727,7 +716,7 @@ fn player_shoot(
                 let rotated_direction = Vec2::from_angle(angle_rad).rotate(BASE_DIRECTION);
 
                 commands.spawn((
-                    PlayerBullet,
+                    BulletTarget::Enemy,
 
                     Transform::from_translation(transform.translation),
                     Text2d::new("*"),
@@ -1008,8 +997,7 @@ fn main() {
         .add_systems(Update, spawn_enemies)
         .add_systems(Update, linear_movement)
         .add_systems(Update, auto_zoom_camera)
-        .add_systems(Update, bullet_hit_enemy)
-        .add_systems(Update, bullet_hit_player)
+        .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))
         .add_systems(Update, item_hit_player)
         .add_systems(Update, enemy_single_shoot)
         .add_systems(Update, enemy_fan_shoot)

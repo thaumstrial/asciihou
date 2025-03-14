@@ -28,18 +28,27 @@ struct EnemyDeathParticle(Timer);
 #[derive(Component, Clone)]
 struct HomingBullet {
     speed: f32,
-    rotate_speed: f32,
+    rotate_speed: f32, // rad/s
+}
+#[derive(Component, Clone)]
+struct SpiralBullet {
+    radius: f32,
+    radius_growth: f32,
+    angular_speed: f32, // rad/s
+    angle: f32, // current angle in rad
+    forward_velocity: f32,
 }
 enum BulletType {
     Normal,
     Homing(HomingBullet),
+    Spiral(SpiralBullet),
 }
 impl BulletType {
     pub fn insert_into(&self, entity: &mut EntityCommands) {
         match self {
             BulletType::Normal => {}
             BulletType::Homing(homing) => { entity.insert(homing.clone()); },
-
+            BulletType::Spiral(spiral) => { entity.insert(spiral.clone()); },
         }
     }
 }
@@ -95,7 +104,7 @@ struct LinearMovement(Vec2);
 #[derive(Component)]
 struct SingleShoot {
     bullet: BulletInfo,
-    direction: Vec2,
+    velocity: Vec2,
     cooldown: Timer,
 }
 #[derive(Component)]
@@ -103,7 +112,7 @@ struct FanShoot {
     bullet: BulletInfo,
     num_bullets: i32,
     angle_deg: f32,
-    direction: Vec2,
+    velocity: Vec2,
     cooldown: Timer,
 }
 
@@ -284,6 +293,19 @@ fn homing_bullet(
     }
 }
 
+fn spiral_bullet(
+    mut query: Query<(&mut SpiralBullet, &mut Velocity)>,
+    time: Res<Time>,
+) {
+    for (mut spiral, mut velocity) in query.iter_mut() {
+        let tangent = Vec2::from_angle(spiral.angle).perp().normalize_or_zero();
+
+        velocity.linvel = tangent * spiral.radius * spiral.angular_speed + spiral.forward_velocity;
+        spiral.angle += spiral.angular_speed * time.delta_secs();
+        spiral.radius += spiral.radius_growth * time.delta_secs();
+    }
+}
+
 fn single_shoot(
     mut commands: Commands,
     mut query: Query<(&GlobalTransform, &mut SingleShoot)>,
@@ -298,7 +320,7 @@ fn single_shoot(
             let mut entity = commands.spawn((
                 single_shot.bullet.to_bundle(),
                 Transform::from_translation(spawn_pos),
-                Velocity::linear(single_shot.direction),
+                Velocity::linear(single_shot.velocity),
             ));
             single_shot.bullet.bullet_type.insert_into(&mut entity);
 
@@ -318,7 +340,7 @@ fn fan_shoot(
             continue;
         }
 
-        let base_direction = shoot.direction;
+        let base_direction = shoot.velocity;
 
         for i in 0..shoot.num_bullets {
             let offset_index = i - (shoot.num_bullets - 1) / 2;
@@ -378,7 +400,7 @@ fn spawn_support_units(
                         text_color: TextColor(Color::Srgba(PURPLE)),
                         collider: Collider::ball(5.0),
                     },
-                    direction: Vec2::Y * 800.0,
+                    velocity: Vec2::Y * 800.0,
                     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating),
                 },
                 Text2d::new("N"),
@@ -474,67 +496,77 @@ fn spawn_enemies(
                 Health((rand::random::<u32>() % 10 + 1) as i32),
             ));
 
-            let shoot_type = rand::random::<f32>();
+            let bullet_rand = rand::random::<f32>();
+            let shoot_rand = rand::random::<f32>();
 
-            if shoot_type < 0.3 {
-                enemy_entity.insert(SingleShoot {
-                    bullet: BulletInfo {
-                        bullet_type: BulletType::Normal,
-                        target: BulletTarget::Player,
-                        text: Text2d::new("x"),
-                        text_font: TextFont {
-                            font: font.0.clone(),
-                            font_size: 30.0,
-                            ..default()
-                        },
-                        text_layout: TextLayout::default(),
-                        text_color: TextColor(Color::Srgba(WHITE)),
-                        collider: Collider::ball(5.0),
+            let bullet_info = match bullet_rand {
+                x if x < 0.3 => BulletInfo {
+                    bullet_type: BulletType::Normal,
+                    target: BulletTarget::Player,
+                    text: Text2d::new("o"),
+                    text_font: TextFont {
+                        font: font.0.clone(),
+                        font_size: 30.0,
+                        ..default()
                     },
-                    direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
-                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.4 + 0.1, TimerMode::Repeating),
-                });
-            } else if shoot_type < 0.6 {
-                enemy_entity.insert(SingleShoot {
-                    bullet: BulletInfo {
-                        bullet_type: BulletType::Homing(HomingBullet {
-                            speed: shoot_direction.length() * (rand::random::<f32>() * 1.0 + 1.5),
-                            rotate_speed: rand::random::<f32>() * 0.5 + 0.3,
-                        }),
-                        target: BulletTarget::Player,
-                        text: Text2d::new("x"),
-                        text_font: TextFont {
-                            font: font.0.clone(),
-                            font_size: 30.0,
-                            ..default()
-                        },
-                        text_layout: TextLayout::default(),
-                        text_color: TextColor(Color::Srgba(GOLD)),
-                        collider: Collider::ball(5.0),
+                    text_layout: Default::default(),
+                    text_color: TextColor(Color::Srgba(WHITE)),
+                    collider: Collider::ball(5.0),
+                },
+                x if x < 0.6 => BulletInfo {
+                    bullet_type: BulletType::Homing(HomingBullet {
+                        speed: shoot_direction.length() * (rand::random::<f32>() * 1.0 + 1.0),
+                        rotate_speed: rand::random::<f32>() * 0.4 + 0.1,
+                    }),
+                    target: BulletTarget::Player,
+                    text: Text2d::new("o"),
+                    text_font: TextFont {
+                        font: font.0.clone(),
+                        font_size: 30.0,
+                        ..default()
                     },
-                    direction: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
-                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.3, TimerMode::Repeating),
-                });
-            } else {
-                enemy_entity.insert(FanShoot {
-                    bullet: BulletInfo {
-                        bullet_type: BulletType::Normal,
-                        target: BulletTarget::Player,
-                        text: Text2d::new("x"),
-                        text_font: TextFont {
-                            font: font.0.clone(),
-                            font_size: 30.0,
-                            ..default()
-                        },
-                        text_layout: TextLayout::default(),
-                        text_color: TextColor(Color::Srgba(GREEN_400)),
-                        collider: Collider::ball(5.0),
+                    text_layout: Default::default(),
+                    text_color: TextColor(Color::Srgba(GOLD)),
+                    collider: Collider::ball(5.0),
+                },
+                _ => BulletInfo {
+                    bullet_type: BulletType::Spiral(SpiralBullet {
+                        angular_speed: rand::random::<f32>() * 4.0 + 1.0,
+                        radius: rand::random::<f32>() * 60.0 + 20.0,
+                        radius_growth: rand::random::<f32>() * 10.0 - 5.0,
+                        angle: rand::random::<f32>() * std::f32::consts::TAU,
+                        forward_velocity: shoot_direction.length() * (rand::random::<f32>() * 0.3 + 0.5),
+                    }),
+                    target: BulletTarget::Player,
+                    text: Text2d::new("o"),
+                    text_font: TextFont {
+                        font: font.0.clone(),
+                        font_size: 30.0,
+                        ..default()
                     },
-                    num_bullets: rand::random::<i32>().abs()     % 6 + 3,
-                    angle_deg: 20.0 * rand::random::<f32>() + 10.0,
-                    direction: shoot_direction * (rand::random::<f32>() * 0.5 + 1.5),
-                    cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.4, TimerMode::Repeating),
-                });
+                    text_layout: Default::default(),
+                    text_color: TextColor(Color::Srgba(GREEN_400)),
+                    collider: Collider::ball(5.0),
+                },
+            };
+
+            match shoot_rand {
+                x if x < 0.6 => {
+                    enemy_entity.insert(SingleShoot {
+                        bullet: bullet_info,
+                        velocity: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
+                        cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.2, TimerMode::Repeating),
+                    });
+                }
+                _ => {
+                    enemy_entity.insert(FanShoot {
+                        bullet: bullet_info,
+                        num_bullets: rand::random::<i32>().abs() % 6 + 3,
+                        angle_deg: 10.0 + rand::random::<f32>() * 20.0,
+                        velocity: shoot_direction * (rand::random::<f32>() * 0.5 + 1.0),
+                        cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.3, TimerMode::Repeating),
+                    });
+                }
             }
         }
     }
@@ -982,7 +1014,7 @@ fn player_movement(
         direction = direction.normalize_or_zero();
 
         let speed = if keyboard_input.pressed(KeyCode::ShiftLeft) {
-            PLAYER_SPEED * 0.3
+            PLAYER_SPEED * 0.5
         } else {
             PLAYER_SPEED
         };
@@ -1220,6 +1252,7 @@ fn main() {
         .add_systems(FixedUpdate, clamp_player_position)
         .add_systems(FixedUpdate, item_gravity)
         .add_systems(FixedUpdate, homing_bullet)
+        .add_systems(FixedUpdate, spiral_bullet)
         .add_systems(FixedUpdate, attract_items)
         .add_systems(
             RunFixedMainLoop,

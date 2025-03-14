@@ -121,7 +121,10 @@ struct PowerItem;
 struct PointItem;
 
 #[derive(Component)]
-struct SupportUnit;
+struct SupportUnit {
+    original_position: Vec3,
+    focus_position: Vec3,
+}
 #[derive(Resource)]
 struct AsciiFont(Handle<Font>);
 #[derive(Resource)]
@@ -348,13 +351,16 @@ fn spawn_support_units(
 
     if let Ok((player_entity, _)) = player_query.get_single() {
         let offsets = [
-            Vec3::new(30.0, 0.0, 0.0),
-            Vec3::new(-30.0, 0.0, 0.0)
+            (Vec3::new(30.0, 0.0, 0.0), Vec3::new(30.0, 30.0, 0.0)),
+            (Vec3::new(-30.0, 0.0, 0.0), Vec3::new(-30.0, 30.0, 0.0))
         ];
 
-        for offset_pos in offsets {
+        for (original_offset, focus_offset) in offsets {
             commands.spawn((
-                SupportUnit,
+                SupportUnit {
+                    original_position: original_offset,
+                    focus_position: focus_offset,
+                },
                 SingleShoot {
                     bullet: BulletInfo {
                         bullet_type: BulletType::Homing(HomingBullet {
@@ -381,10 +387,10 @@ fn spawn_support_units(
                     font_size: 30.0,
                     ..default()
                 },
-                Transform::from_translation(offset_pos),
+                Transform::from_translation(original_offset),
                 RigidBody::KinematicVelocityBased,
                 Velocity {
-                    angvel: 2.0 * (-offset_pos.x.signum()),
+                    angvel: 2.0 * (-original_offset.x.signum()),
                     ..default()
                 },
                 TextLayout::default(),
@@ -904,16 +910,28 @@ fn clamp_player_position(
     }
 }
 
+fn show_judge_point(
+    mut query: Query<&mut Visibility, With<JudgePoint>>,
+) {
+    for mut visibility in query.iter_mut() {
+        *visibility = Visibility::Visible;
+    }
+}
+fn hide_judge_point(
+    mut query: Query<&mut Visibility, With<JudgePoint>>,
+) {
+    for mut visibility in query.iter_mut() {
+        *visibility = Visibility::Hidden;
+    }
+}
+
 
 fn player_movement(
-    mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_query: Query<(Entity, &mut Velocity), With<Player>>,
-    font: Res<AsciiFont>,
-    judge_point_query: Query<Entity, With<JudgePoint>>,
+    mut player_query: Query<&mut Velocity, With<Player>>,
 ) {
     const SPEED: f32 = 210.0;
-    for (player_entity, mut velocity) in player_query.iter_mut() {
+    for mut velocity in player_query.iter_mut() {
         let mut direction = Vec2::ZERO;
 
         if keyboard_input.pressed(KeyCode::ArrowUp) {
@@ -932,27 +950,8 @@ fn player_movement(
         direction = direction.normalize_or_zero();
 
         let speed = if keyboard_input.pressed(KeyCode::ShiftLeft) {
-            if judge_point_query.is_empty() {
-                commands.spawn((
-                    JudgePoint,
-                    Text2d::new("·"),
-                    TextFont {
-                        font: font.0.clone(),
-                        font_size: 60.0,
-                        ..default()
-                    },
-                    TextLayout::default(),
-                    TextColor(Color::Srgba(WHITE)),
-                    Transform::from_translation(Vec3::new(0.0, 5.0, 1.0)),
-                )).set_parent(player_entity);
-            }
-
             SPEED * 0.3
         } else {
-            for entity in judge_point_query.iter() {
-                commands.entity(entity).despawn();
-            }
-
             SPEED
         };
 
@@ -1023,7 +1022,22 @@ fn setup(
 
         ActiveEvents::COLLISION_EVENTS,
         CollisionGroups::new(Group::GROUP_1, Group::GROUP_4 | Group::GROUP_6 | Group::GROUP_8)
-    ));
+    )).with_children(|builder| {
+       builder.spawn((
+           JudgePoint,
+           Text2d::new("·"),
+           TextFont {
+               font: font.clone(),
+               font_size: 60.0,
+               ..default()
+           },
+           TextLayout::default(),
+           TextColor(Color::Srgba(WHITE)),
+           Visibility::Hidden,
+           Transform::from_translation(Vec3::new(0.0, 5.0, 1.0)),
+       ));
+    });
+
 
     let width = 1280.0;
     let height = 720.0;
@@ -1163,6 +1177,8 @@ fn main() {
         .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, enemy_death_particles)
+        .add_systems(Update, show_judge_point.run_if(input_just_pressed(KeyCode::ShiftLeft)))
+        .add_systems(Update, hide_judge_point.run_if(input_just_released(KeyCode::ShiftLeft)))
         .add_systems(FixedUpdate, tick_cooldown_timer)
         .add_systems(FixedUpdate, despawn_bullets)
         .add_systems(FixedUpdate, despawn_items)

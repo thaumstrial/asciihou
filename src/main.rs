@@ -351,8 +351,8 @@ fn spawn_support_units(
 
     if let Ok((player_entity, _)) = player_query.get_single() {
         let offsets = [
-            (Vec3::new(30.0, 0.0, 0.0), Vec3::new(30.0, 30.0, 0.0)),
-            (Vec3::new(-30.0, 0.0, 0.0), Vec3::new(-30.0, 30.0, 0.0))
+            (Vec3::new(30.0, 0.0, 0.0), Vec3::new(15.0, 30.0, 0.0)),
+            (Vec3::new(-30.0, 0.0, 0.0), Vec3::new(-15.0, 30.0, 0.0))
         ];
 
         for (original_offset, focus_offset) in offsets {
@@ -924,13 +924,45 @@ fn hide_judge_point(
         *visibility = Visibility::Hidden;
     }
 }
+fn support_unit_focus(
+    mut query: Query<(&SupportUnit, &mut Transform)>,
+    time: Res<Time>,
+) {
+    const FOCUS_SPEED: f32 = 10.0;
+    const POSITION_EPSILON: f32 = 0.5;
+    for (support, mut transform) in query.iter_mut() {
+        let target = support.focus_position;
+        let current = transform.translation;
+        if current.distance(target) < POSITION_EPSILON {
+            continue;
+        }
+        let new = current.lerp(target, FOCUS_SPEED * time.delta_secs());
+        transform.translation = new;
+    }
+}
+fn support_unit_reset(
+    mut query: Query<(&SupportUnit, &mut Transform)>,
+    time: Res<Time>,
+) {
+    const RESET_SPEED: f32 = 10.0;
+    const POSITION_EPSILON: f32 = 0.5;
+    for (support, mut transform) in query.iter_mut() {
+        let target = support.original_position;
+        let current = transform.translation;
+        if current.distance(target) < POSITION_EPSILON {
+            continue;
+        }
+        let new = current.lerp(target, RESET_SPEED * time.delta_secs());
+        transform.translation = new;
+    }
+}
 
 
 fn player_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut player_query: Query<&mut Velocity, With<Player>>,
 ) {
-    const SPEED: f32 = 210.0;
+    const PLAYER_SPEED: f32 = 300.0;
     for mut velocity in player_query.iter_mut() {
         let mut direction = Vec2::ZERO;
 
@@ -950,9 +982,9 @@ fn player_movement(
         direction = direction.normalize_or_zero();
 
         let speed = if keyboard_input.pressed(KeyCode::ShiftLeft) {
-            SPEED * 0.3
+            PLAYER_SPEED * 0.3
         } else {
-            SPEED
+            PLAYER_SPEED
         };
 
         velocity.linvel = direction * speed;
@@ -1179,6 +1211,8 @@ fn main() {
         .add_systems(Update, enemy_death_particles)
         .add_systems(Update, show_judge_point.run_if(input_just_pressed(KeyCode::ShiftLeft)))
         .add_systems(Update, hide_judge_point.run_if(input_just_released(KeyCode::ShiftLeft)))
+        .add_systems(Update, support_unit_focus.run_if(input_pressed(KeyCode::ShiftLeft)))
+        .add_systems(Update, support_unit_reset.run_if(not(input_pressed(KeyCode::ShiftLeft))))
         .add_systems(FixedUpdate, tick_cooldown_timer)
         .add_systems(FixedUpdate, despawn_bullets)
         .add_systems(FixedUpdate, despawn_items)

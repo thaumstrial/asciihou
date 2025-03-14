@@ -147,7 +147,10 @@ fn attract_items(
     rapier_context: ReadDefaultRapierContext,
     player_query: Query<(Entity, &Transform), With<Player>>,
     mut item_query: Query<(&mut Velocity, &Transform), Or<(With<PowerItem>, With<PointItem>)>>,
+    window: Res<WindowSize>,
 ) {
+    const TOP_ZONE_HEIGHT: f32 = 150.0;
+    const AUTO_ATTRACT_SPEED: f32 = 400.0;
     const ATTRACT_RADIUS: f32 = 80.0;
     const ATTRACT_SPEED: f32 = 100.0;
 
@@ -155,26 +158,37 @@ fn attract_items(
         let player_pos = player_transform.translation.truncate();
         let shape = Collider::ball(ATTRACT_RADIUS);
 
-        rapier_context.intersections_with_shape(
-            player_pos,
-            0.0,
-            &shape,
-            QueryFilter {
-                exclude_rigid_body: Some(player_entity),
-                groups: Some(CollisionGroups::new(Group::ALL, Group::GROUP_6)),
-                ..default()
-            },
-            |item_entity| {
-                if let Ok((mut velocity, item_pos)) = item_query.get_mut(item_entity) {
-                    let dir = (player_pos - item_pos.translation.truncate()).normalize_or_zero();
-                    let distance = player_pos.distance(item_pos.translation.truncate());
-                    let strength = 1.0 - (distance / ATTRACT_RADIUS);
-                    let attract_speed = ATTRACT_SPEED * (1.0 + strength.clamp(0.0, 1.0));
-                    velocity.linvel = dir * attract_speed;
-                }
-                true
+        if player_pos.y > window.height / 2.0 - TOP_ZONE_HEIGHT {
+            let player_pos = player_transform.translation.truncate();
+
+            for (mut item_velocity, item_transform) in item_query.iter_mut() {
+                let dir = (player_pos - item_transform.translation.truncate()).normalize_or_zero();
+                item_velocity.linvel = dir * AUTO_ATTRACT_SPEED;
             }
-        );
+
+            return;
+        } else {
+            rapier_context.intersections_with_shape(
+                player_pos,
+                0.0,
+                &shape,
+                QueryFilter {
+                    exclude_rigid_body: Some(player_entity),
+                    groups: Some(CollisionGroups::new(Group::ALL, Group::GROUP_6)),
+                    ..default()
+                },
+                |item_entity| {
+                    if let Ok((mut velocity, item_pos)) = item_query.get_mut(item_entity) {
+                        let dir = (player_pos - item_pos.translation.truncate()).normalize_or_zero();
+                        let distance = player_pos.distance(item_pos.translation.truncate());
+                        let strength = 1.0 - (distance / ATTRACT_RADIUS);
+                        let attract_speed = ATTRACT_SPEED * (1.0 + strength.clamp(0.0, 1.0));
+                        velocity.linvel = dir * attract_speed;
+                    }
+                    true
+                }
+            );
+        }
     }
 }
 

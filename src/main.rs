@@ -1,3 +1,4 @@
+use std::ops::Mul;
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::color::palettes::tailwind::*;
@@ -8,6 +9,11 @@ use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
+use bevy::core_pipeline::{
+    bloom::Bloom,
+    tonemapping::Tonemapping,
+};
+use bevy::core_pipeline::bloom::BloomPrefilter;
 
 #[derive(Component, Clone)]
 enum BulletTarget {
@@ -17,7 +23,7 @@ enum BulletTarget {
 impl BulletTarget {
     pub fn collision_groups(&self) -> CollisionGroups {
         match self {
-            BulletTarget::Player => CollisionGroups::new(Group::GROUP_8, Group::GROUP_1),
+            BulletTarget::Player => CollisionGroups::new(Group::GROUP_8, Group::GROUP_1 | Group::GROUP_7),
             BulletTarget::Enemy => CollisionGroups::new(Group::GROUP_2, Group::GROUP_4),
         }
     }
@@ -39,6 +45,11 @@ struct SpiralBullet {
     angular_speed: f32, // rad/s
     angle: f32, // current angle in rad
     forward_velocity: Vec2,
+}
+#[derive(Component)]
+struct GrazingBullet{
+    speed_decay: f32,
+    original_color: Color,
 }
 #[derive(Component, Clone)]
 struct LaserBullet {
@@ -106,6 +117,8 @@ struct JudgePoint;
 #[derive(Component)]
 struct Player;
 #[derive(Component)]
+struct GrazeZone;
+#[derive(Component)]
 struct ShootCooldown(Timer);
 #[derive(Component)]
 struct Enemy;
@@ -137,6 +150,8 @@ struct PlayerPowersText;
 #[derive(Component)]
 struct PlayerPointsText;
 #[derive(Component)]
+struct PlayerGrazeText;
+#[derive(Component)]
 struct PowerItem;
 #[derive(Component)]
 struct PointItem;
@@ -167,6 +182,8 @@ struct PlayerBombs(pub i32);
 struct PlayerPowers(pub i32);
 #[derive(Resource)]
 struct PlayerPoints(pub i32);
+#[derive(Resource)]
+struct PlayerGraze(pub i32);
 fn attract_items(
     rapier_context: ReadDefaultRapierContext,
     player_query: Query<(Entity, &Transform), With<Player>>,
@@ -244,6 +261,16 @@ fn update_powers_text(
     let margins = " ".repeat(powers.0.to_string().len().max(0));
     for mut text in query.iter_mut() {
         text.0 = format!(" {}Power: {}", margins, num);
+    }
+}
+fn update_graze_text(
+    graze: Res<PlayerGraze>,
+    mut query: Query<&mut Text2d, With<PlayerGrazeText>>,
+) {
+    let num = graze.0.to_string();
+    let margins = " ".repeat(graze.0.to_string().len().max(0));
+    for mut text in query.iter_mut() {
+        text.0 = format!(" {}Graze: {}", margins, num);
     }
 }
 fn update_points_text(
@@ -335,12 +362,24 @@ fn homing_bullet_find_nearest<'a>(
 
 
 fn homing_bullet(
-    mut query: Query<(&mut Velocity, &Transform, &HomingBullet, &BulletTarget)>,
+    mut query: Query<(
+        &mut Velocity,
+        &Transform,
+        &HomingBullet,
+        &BulletTarget,
+        Option<&GrazingBullet>,
+    )>,
     players: Query<&Transform, With<Player>>,
     enemies: Query<&Transform, With<Enemy>>,
     time: Res<Time>,
 ) {
-    for (mut velocity, bullet_transform, homing, target) in query.iter_mut() {
+    for (
+        mut velocity,
+        bullet_transform,
+        homing,
+        target,
+        option_graze
+    ) in query.iter_mut() {
         let current_dir = velocity.linvel.normalize_or_zero();
 
         let target_transform = match target {
@@ -353,21 +392,34 @@ fn homing_bullet(
             let angle_between = current_dir.angle_to(desired_dir);
             let max_rotate = homing.rotate_speed * time.delta_secs();
             let clamped_angle = angle_between.clamp(-max_rotate, max_rotate);
-            let new_dir = current_dir.rotate(Vec2::from_angle(clamped_angle));
+            let new_dir = current_dir.rotate(Vec2::from_angle(clamped_angle)).normalize_or_zero();
 
-            velocity.linvel = new_dir.normalize_or_zero() * homing.speed;
+            let decay = if let Some(graze) = option_graze {
+                graze.speed_decay
+            } else {
+                1.0
+            };
+            velocity.linvel = new_dir * homing.speed * decay;
         }
     }
 }
 
 fn spiral_bullet(
-    mut query: Query<(&mut SpiralBullet, &mut Velocity)>,
+    mut query: Query<(&mut SpiralBullet, &mut Velocity, Option<&GrazingBullet>,)>,
     time: Res<Time>,
 ) {
-    for (mut spiral, mut velocity) in query.iter_mut() {
+    for (mut spiral, mut velocity, option_graze) in query.iter_mut() {
         let tangent = Vec2::from_angle(spiral.angle).perp().normalize_or_zero();
 
+        let decay = if let Some(graze) = option_graze {
+            graze.speed_decay
+        } else {
+            1.0
+        };
+
         velocity.linvel = tangent * spiral.radius * spiral.angular_speed + spiral.forward_velocity;
+        velocity.linvel *= decay;
+
         spiral.angle += spiral.angular_speed * time.delta_secs();
         spiral.radius += spiral.radius_growth * time.delta_secs();
     }
@@ -1072,6 +1124,78 @@ fn player_bomb(
     bombs.0 = (bombs.0 - 1).max(0);
 }
 
+fn match_graze_bullet_pair<'a>(
+    e1: Entity,
+    e2: Entity,
+    graze_zone: &Query<(), With<GrazeZone>>,
+    bullets: &Query<(Entity, &mut Velocity, Option<&GrazingBullet>, &mut TextColor), With<BulletTarget>>,
+) -> Option<Entity> {
+    if graze_zone.get(e1).is_ok() && bullets.get(e2).is_ok() {
+        Some(e2)
+    } else if graze_zone.get(e2).is_ok() && bullets.get(e1).is_ok() {
+        Some(e1)
+    } else {
+        None
+    }
+}
+
+
+fn player_graze(
+    mut commands: Commands,
+    mut events: EventReader<CollisionEvent>,
+    graze_zone: Query<(), With<GrazeZone>>,
+    mut bullets: Query<(
+            Entity,
+            &mut Velocity,
+            Option<&GrazingBullet>,
+            &mut TextColor,
+        ),
+        With<BulletTarget>>,
+    mut player_graze: ResMut<PlayerGraze>,
+) {
+    const GRAZE_DECAY: f32 = 0.7;
+    const BLOOM_BRIGHTNESS: f32 = 4.0;
+
+    for event in events.read() {
+        match event {
+            CollisionEvent::Started(e1, e2, _) => {
+                if let Some(bullet_entity) = match_graze_bullet_pair(*e1, *e2, &graze_zone, &bullets) {
+                    if let Ok((entity, mut velocity, option_graze, mut text_color)) = bullets.get_mut(bullet_entity) {
+                        if option_graze.is_none() {
+                            velocity.linvel *= GRAZE_DECAY;
+
+                            let original = text_color.0;
+                            commands.entity(entity).insert(GrazingBullet{
+                                speed_decay: GRAZE_DECAY,
+                                original_color: original
+                            });
+
+                            text_color.0 = Color::from(original.to_linear() * BLOOM_BRIGHTNESS);
+                            player_graze.0 += 1;
+                        }
+                    }
+                }
+            }
+            CollisionEvent::Stopped(e1, e2, _) => {
+                if let Some(bullet_entity) = match_graze_bullet_pair(*e1, *e2, &graze_zone, &bullets) {
+                    if let Ok((
+                        entity,
+                        mut velocity,
+                        option_graze,
+                        mut text_color
+                    )) = bullets.get_mut(bullet_entity) {
+                        if let Some(graze) = option_graze {
+                            velocity.linvel /= graze.speed_decay;
+                            text_color.0 = graze.original_color;
+                            commands.entity(entity).remove::<GrazingBullet>();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn player_shoot(
     mut query: Query<(&Transform, &mut ShootCooldown), With<Player>>,
     font: Res<AsciiFont>,
@@ -1248,8 +1372,10 @@ fn setup(
 
     commands.insert_resource(PlayerLives(2));
     commands.insert_resource(PlayerBombs(3));
-    commands.insert_resource(PlayerPoints(0));
+
     commands.insert_resource(PlayerPowers(0));
+    commands.insert_resource(PlayerGraze(0));
+    commands.insert_resource(PlayerPoints(0));
 
     let font_size = 40.0;
     let text_font = TextFont {
@@ -1259,7 +1385,18 @@ fn setup(
     };
     let text_justification = JustifyText::Center;
 
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        Camera { hdr: true, ..default() },
+        // Tonemapping::default(),
+        Bloom {
+            prefilter: BloomPrefilter {
+                threshold: 0.5,
+                ..default()
+            },
+            ..default()
+        },
+    ));
     commands.spawn((
         Text2d::new("@"),
         text_font.clone(),
@@ -1277,19 +1414,26 @@ fn setup(
         ActiveEvents::COLLISION_EVENTS,
         CollisionGroups::new(Group::GROUP_1, Group::GROUP_4 | Group::GROUP_6 | Group::GROUP_8)
     )).with_children(|builder| {
-       builder.spawn((
-           JudgePoint,
-           Text2d::new("·"),
-           TextFont {
+        builder.spawn((
+            JudgePoint,
+            Text2d::new("·"),
+            TextFont {
                font: font.clone(),
                font_size: 60.0,
                ..default()
-           },
-           TextLayout::default(),
-           TextColor(Color::Srgba(WHITE)),
-           Visibility::Hidden,
-           Transform::from_translation(Vec3::new(0.0, 5.0, 1.0)),
-       ));
+            },
+            TextLayout::default(),
+            TextColor(Color::Srgba(WHITE)),
+            Visibility::Hidden,
+            Transform::from_translation(Vec3::new(0.0, 5.0, 1.0)),
+        ));
+        builder.spawn((
+            GrazeZone,
+            Collider::ball(15.0),
+            CollisionGroups::new(Group::GROUP_7, Group::GROUP_8),
+            ActiveEvents::COLLISION_EVENTS,
+            Sensor,
+        ));
     });
 
 
@@ -1384,6 +1528,15 @@ fn setup(
         TextColor(Color::Srgba(WHITE)),
 
         Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 5.0, 1.0)),
+        PlayerGrazeText,
+    ));
+    commands.spawn((
+        Text2d::new(""),
+        text_font.clone(),
+        TextLayout::default(),
+        TextColor(Color::Srgba(WHITE)),
+
+        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 6.5, 1.0)),
         PlayerPointsText,
     ));
 }
@@ -1420,12 +1573,14 @@ fn main() {
         .add_systems(Update, linear_movement)
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))
+        .add_systems(Update, player_graze.run_if(on_event::<CollisionEvent>))
         .add_systems(Update, item_hit_player.run_if(on_event::<CollisionEvent>))
         .add_systems(Update, single_shoot)
         .add_systems(Update, fan_shoot)
         .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
         .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
         .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))
+        .add_systems(Update, update_graze_text.run_if(resource_changed::<PlayerGraze>))
         .add_systems(Update, update_points_text.run_if(resource_changed::<PlayerPoints>))
         .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyZ)))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyX)))

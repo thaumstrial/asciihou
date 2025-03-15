@@ -337,13 +337,17 @@ fn laser_bullet(
 
                 if !laser.animation_timer.finished() {
                     laser.animation_timer.tick(time.delta());
-
-                    let total_rows = text.0.lines().count();
-                    let v_progress = laser.animation_timer.elapsed_secs() / laser.animation_timer.duration().as_secs_f32();
-                    let rows_to_replace = (total_rows as f32 * v_progress.clamp(0.0, 1.0)).ceil() as usize;
-
-                    text.0 = format!("{}{}","V\n".repeat(rows_to_replace), "!\n".repeat(total_rows - rows_to_replace));
                 }
+                let total_rows = text.0.lines().count();
+                let animation_progress = laser.animation_timer.elapsed_secs() / laser.animation_timer.duration().as_secs_f32();
+                let duration_progress = laser.duration.elapsed_secs() / laser.duration.duration().as_secs_f32();
+
+                let rows_to_replace = (total_rows as f32 * animation_progress.clamp(0.0, 1.0)).ceil() as usize;
+                let rows_decays = (total_rows as f32 * (duration_progress - 0.85).max(0.0) / 0.15).ceil() as usize;
+                text.0 = format!("{}{}{}",
+                    " \n".repeat(rows_decays),
+                    "V\n".repeat(rows_to_replace - rows_decays),
+                    "!\n".repeat(total_rows - rows_to_replace));
             }
         }
     }

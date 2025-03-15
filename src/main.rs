@@ -544,11 +544,11 @@ fn spawn_enemies(
                 },
                 _ => BulletInfo {
                     bullet_type: BulletType::Spiral(SpiralBullet {
-                        angular_speed: rand::random::<f32>() * 4.0 + 1.0,
+                        angular_speed: rand::random::<f32>() * 1.0 + 0.5,
                         radius: rand::random::<f32>() * 60.0 + 20.0,
                         radius_growth: rand::random::<f32>() * 10.0 - 5.0,
                         angle: rand::random::<f32>() * std::f32::consts::TAU,
-                        forward_velocity: shoot_direction * (rand::random::<f32>() * 0.3 + 0.5),
+                        forward_velocity: shoot_direction * (rand::random::<f32>() * 0.3 + 0.2),
                     }),
                     target: BulletTarget::Player,
                     text: Text2d::new("o"),
@@ -567,17 +567,17 @@ fn spawn_enemies(
                 x if x < 0.6 => {
                     enemy_entity.insert(SingleShoot {
                         bullet: bullet_info,
-                        velocity: shoot_direction * (rand::random::<f32>() * 2.0 + 2.0),
-                        cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.2, TimerMode::Repeating),
+                        velocity: shoot_direction * (rand::random::<f32>() * 1.0 + 1.0),
+                        cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.5, TimerMode::Repeating),
                     });
                 }
                 _ => {
                     enemy_entity.insert(FanShoot {
                         bullet: bullet_info,
                         num_bullets: rand::random::<i32>().abs() % 6 + 3,
-                        angle_deg: 10.0 + rand::random::<f32>() * 20.0,
+                        angle_deg: 5.0 + rand::random::<f32>() * 10.0,
                         velocity: shoot_direction * (rand::random::<f32>() * 0.5 + 1.0),
-                        cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.3, TimerMode::Repeating),
+                        cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.5, TimerMode::Repeating),
                     });
                 }
             }
@@ -626,6 +626,7 @@ fn enemy_death_particles(
 
         let decay = 1.0 - time.delta_secs() * DECAY_COEFFICIENT;
         velocity.linvel *= decay.clamp(0.0, 1.0);
+        velocity.angvel *= decay.clamp(0.0, 1.0);
 
         if timer.0.finished() {
             commands.entity(entity).despawn();

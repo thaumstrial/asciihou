@@ -11,7 +11,7 @@ use bevy_rapier2d::prelude::*;
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
 
-const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -300.0, 0.0);
+const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
 #[derive(Component, Clone)]
 enum BulletTarget {
     Player,
@@ -130,6 +130,7 @@ struct SingleShoot {
     bullet: BulletInfo,
     velocity: Vec2,
     cooldown: Timer,
+    times: i32,
 }
 #[derive(Component)]
 struct FanShoot {
@@ -138,6 +139,7 @@ struct FanShoot {
     angle_deg: f32,
     velocity: Vec2,
     cooldown: Timer,
+    times: i32,
 }
 
 #[derive(Component)]
@@ -431,13 +433,20 @@ fn spiral_bullet(
 
 fn single_shoot(
     mut commands: Commands,
-    mut query: Query<(&GlobalTransform, &mut SingleShoot)>,
+    mut query: Query<(Entity, &GlobalTransform, &mut SingleShoot)>,
     time: Res<Time>,
 ) {
-    for (transform, mut shoot) in query.iter_mut() {
+    for (entity, transform, mut shoot) in query.iter_mut() {
         shoot.cooldown.tick(time.delta());
 
         if shoot.cooldown.finished() {
+            if shoot.times > 0 {
+                shoot.times -= 1;
+            } else {
+                commands.entity(entity).remove::<SingleShoot>();
+                continue
+            }
+
             let spawn_pos = transform.translation();
 
             let mut bullet_entity = commands.spawn((
@@ -477,13 +486,20 @@ fn single_shoot(
 
 fn fan_shoot(
     mut commands: Commands,
-    mut query: Query<(&GlobalTransform, &mut FanShoot)>,
+    mut query: Query<(Entity, &GlobalTransform, &mut FanShoot)>,
     time: Res<Time>,
 ) {
-    for (transform, mut shoot) in query.iter_mut() {
+    for (entity, transform, mut shoot) in query.iter_mut() {
         shoot.cooldown.tick(time.delta());
         if !shoot.cooldown.finished() {
             continue;
+        }
+
+        if shoot.times > 0 {
+            shoot.times -= 1;
+        } else {
+            commands.entity(entity).remove::<SingleShoot>();
+            continue
         }
 
         let base_direction = shoot.velocity;
@@ -570,6 +586,7 @@ fn spawn_support_units(
                     },
                     velocity: Vec2::Y * 800.0,
                     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating),
+                    times: 0,
                 },
                 Text2d::new("N"),
                 TextFont {
@@ -753,6 +770,7 @@ fn spawn_enemies(
                         bullet: bullet_info,
                         velocity: shoot_direction * (rand::random::<f32>() * 1.0 + 1.0),
                         cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.5, TimerMode::Repeating),
+                        times: rand::random::<i32>().abs() % 8 + 8,
                     });
                 }
                 _ => {
@@ -762,6 +780,7 @@ fn spawn_enemies(
                         angle_deg: 5.0 + rand::random::<f32>() * 10.0,
                         velocity: shoot_direction * (rand::random::<f32>() * 0.5 + 1.0),
                         cooldown: Timer::from_seconds(rand::random::<f32>() * 0.5 + 0.5, TimerMode::Repeating),
+                        times: rand::random::<i32>().abs() % 8 + 8,
                     });
                 }
             }

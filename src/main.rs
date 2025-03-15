@@ -442,7 +442,7 @@ fn single_shoot(
         if shoot.cooldown.finished() {
             if shoot.times > 0 {
                 shoot.times -= 1;
-            } else {
+            } else if shoot.times == 0 {
                 commands.entity(entity).remove::<SingleShoot>();
                 continue
             }
@@ -497,8 +497,8 @@ fn fan_shoot(
 
         if shoot.times > 0 {
             shoot.times -= 1;
-        } else {
-            commands.entity(entity).remove::<SingleShoot>();
+        } else if shoot.times == 0 {
+            commands.entity(entity).remove::<FanShoot>();
             continue
         }
 
@@ -586,7 +586,7 @@ fn spawn_support_units(
                     },
                     velocity: Vec2::Y * 800.0,
                     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating),
-                    times: 0,
+                    times: -1,
                 },
                 Text2d::new("N"),
                 TextFont {

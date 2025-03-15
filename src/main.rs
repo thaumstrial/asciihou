@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::color::palettes::tailwind::*;
@@ -12,6 +14,16 @@ use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
 
 const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
+enum AppState {
+    MainMenu,
+    InGame,
+}
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
+enum GameState {
+    Running,
+    Paused,
+}
 #[derive(Component, Clone)]
 enum BulletTarget {
     Player,
@@ -442,7 +454,7 @@ fn single_shoot(
         if shoot.cooldown.finished() {
             if shoot.times > 0 {
                 shoot.times -= 1;
-            } else {
+            } else if shoot.times == 0 {
                 commands.entity(entity).remove::<SingleShoot>();
                 continue
             }
@@ -497,8 +509,8 @@ fn fan_shoot(
 
         if shoot.times > 0 {
             shoot.times -= 1;
-        } else {
-            commands.entity(entity).remove::<SingleShoot>();
+        } else if shoot.times == 0 {
+            commands.entity(entity).remove::<FanShoot>();
             continue
         }
 
@@ -586,7 +598,7 @@ fn spawn_support_units(
                     },
                     velocity: Vec2::Y * 800.0,
                     cooldown: Timer::from_seconds(0.2, TimerMode::Repeating),
-                    times: 0,
+                    times: -1,
                 },
                 Text2d::new("N"),
                 TextFont {
@@ -1533,6 +1545,8 @@ fn setup(
     commands.insert_resource(PlayerGraze(0));
     commands.insert_resource(PlayerPoints(0));
 
+    commands.set_state(AppState::MainMenu);
+
     let font_size = 40.0;
     let text_font = TextFont {
         font: font.clone(),
@@ -1696,6 +1710,13 @@ fn setup(
         Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 6.5, 1.0)),
         PlayerPointsText,
     ));
+
+    // audio
+    // let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
+    // commands.spawn(
+    //     AudioPlayer::new(a),
+    // );
+
 }
 
 

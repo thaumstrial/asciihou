@@ -1,4 +1,3 @@
-use std::ops::Mul;
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::color::palettes::tailwind::*;
@@ -9,10 +8,7 @@ use bevy::text::{JustifyText, Text2d, TextFont, TextLayout};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
-use bevy::core_pipeline::{
-    bloom::Bloom,
-    tonemapping::Tonemapping,
-};
+use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
 
 #[derive(Component, Clone)]
@@ -31,6 +27,8 @@ impl BulletTarget {
 
 #[derive(Component)]
 struct EnemyDeathParticle(Timer);
+#[derive(Component)]
+struct PlayerDeathParticle(Timer);
 #[derive(Component)]
 struct EnemyHitParticle(Timer);
 #[derive(Component, Clone)]
@@ -836,7 +834,29 @@ fn enemy_death_particles(
         }
     }
 }
+fn player_death_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut PlayerDeathParticle, &mut TextColor, &mut Velocity)>,
+) {
+    const LINVEL_DECAY_COEFFICIENT: f32 = 0.2;
+    const ANGVEL_DECAY_COEFFICIENT: f32 = 1.5;
+    for (entity, mut timer, mut color, mut velocity) in query.iter_mut() {
+        timer.0.tick(time.delta());
 
+        let progress = timer.0.elapsed_secs() / timer.0.duration().as_secs_f32();
+        color.0.set_alpha((1.0 - progress).clamp(0.0, 1.0));
+
+        let linvel_decay = 1.0 - time.delta_secs() * LINVEL_DECAY_COEFFICIENT;
+        let angvel_decay = 1.0 - time.delta_secs() * ANGVEL_DECAY_COEFFICIENT;
+        velocity.linvel *= linvel_decay.clamp(0.0, 1.0);
+        velocity.angvel *= angvel_decay.clamp(0.0, 1.0);
+
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
 fn match_bullet_hit_pair<
     Target: Component,
     D: QueryData
@@ -860,7 +880,7 @@ fn bullet_hit(
     mut collision_events: EventReader<CollisionEvent>,
 
     mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
-    player: Query<Entity, With<Player>>,
+    player: Query<(Entity, &Transform), With<Player>>,
     bullets: Query<(Entity, &BulletTarget, &Transform)>,
 
     mut lives: ResMut<PlayerLives>,
@@ -1006,10 +1026,44 @@ fn bullet_hit(
                 } else if let Some((bullet_entity, _ )) =
                     match_bullet_hit_pair::<
                         Player,
-                        Entity
+                        (Entity, &Transform)
                     >(*entity1, *entity2, &bullets, &player)
                 {
+                    // player death
                     lives.0 = (lives.0 - 1).max(0);
+
+                    if let Ok((_, player_transform)) = player.get_single() {
+                        let num_particles = rand::random::<i32>().abs() % 4 + 8;
+                        for _ in 0..num_particles {
+                            let hex_str = format!("0x{:02X}", rand::random::<u8>());
+                            let hue = 90.0 + rand::random::<f32>() * 60.0;
+                            let saturation = 0.6 + rand::random::<f32>() * 0.4;
+                            let lightness = 0.4 + rand::random::<f32>() * 0.4;
+                            let color = Color::hsl(hue, saturation, lightness);
+
+                            let angle = rand::random::<f32>() * std::f32::consts::TAU;
+                            let speed = rand::random::<f32>() * 50.0 + 80.0;
+                            let dir = Vec2::from_angle(angle) * speed;
+
+                            commands.spawn((
+                                PlayerDeathParticle(Timer::from_seconds(rand::random::<f32>() * 1.5 + 1.5, TimerMode::Once)),
+                                Text2d::new(hex_str),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 20.0,
+                                    ..default()
+                                },
+                                TextLayout::default(),
+                                TextColor(color),
+                                Transform::from_translation(player_transform.translation.truncate().extend(2.0)),
+                                RigidBody::KinematicVelocityBased,
+                                Velocity {
+                                    linvel: dir,
+                                    angvel: rand::random::<f32>() * 10.0 - 5.0,
+                                },
+                            ));
+                        }
+                    }
                     commands.entity(bullet_entity).despawn();
                 }
 
@@ -1591,6 +1645,7 @@ fn main() {
         .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, enemy_death_particles)
+        .add_systems(Update, player_death_particles)
         .add_systems(Update, enemy_hit_particles)
         .add_systems(Update, show_judge_point.run_if(input_just_pressed(KeyCode::ShiftLeft)))
         .add_systems(Update, hide_judge_point.run_if(input_just_released(KeyCode::ShiftLeft)))

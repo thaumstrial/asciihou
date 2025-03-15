@@ -11,6 +11,7 @@ use bevy_rapier2d::prelude::*;
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
 
+const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -300.0, 0.0);
 #[derive(Component, Clone)]
 enum BulletTarget {
     Player,
@@ -153,7 +154,8 @@ struct PlayerGrazeText;
 struct PowerItem;
 #[derive(Component)]
 struct PointItem;
-
+#[derive(Component)]
+struct Invincible(pub Timer);
 #[derive(Component)]
 struct SupportUnit {
     original_position: Vec3,
@@ -857,6 +859,32 @@ fn player_death_particles(
         }
     }
 }
+
+fn tick_invincibility(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut Invincible, &mut Visibility)>,
+) {
+    const BLINK_FREQ: f32 = 10.0;
+    for (entity, mut inv, mut visibility) in query.iter_mut() {
+        inv.0.tick(time.delta());
+
+        let phase = inv.0.elapsed_secs() * BLINK_FREQ * std::f32::consts::TAU;
+        let blink_on = phase.sin() >= 0.0;
+
+        *visibility = if blink_on {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+
+        if inv.0.finished() {
+            commands.entity(entity).remove::<Invincible>();
+            *visibility = Visibility::Visible;
+        }
+    }
+}
+
 fn match_bullet_hit_pair<
     Target: Component,
     D: QueryData
@@ -879,8 +907,8 @@ fn bullet_hit(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
 
-    mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
-    player: Query<(Entity, &Transform), With<Player>>,
+    mut enemies: Query<(Entity, &mut Health, &Transform, Option<&Invincible>), With<Enemy>>,
+    player: Query<(Entity, &Transform, Option<&Invincible>), With<Player>>,
     bullets: Query<(Entity, &BulletTarget, &Transform)>,
 
     mut lives: ResMut<PlayerLives>,
@@ -893,10 +921,13 @@ fn bullet_hit(
                 if let Some((bullet_entity, enemy_entity)) =
                     match_bullet_hit_pair::<
                         Enemy,
-                        (Entity, &mut Health, &Transform)
+                        (Entity, &mut Health, &Transform, Option<&Invincible>)
                     >(*entity1, *entity2, &bullets, &enemies)
                 {
-                    if let Ok((enemy_ent, mut health, transform)) = enemies.get_mut(enemy_entity) {
+                    if let Ok((enemy_ent, mut health, transform, invincible)) = enemies.get_mut(enemy_entity) {
+                        if invincible.is_some() {
+                            continue
+                        }
                         health.0 -= 1;
 
                         // generate enemy hit particle
@@ -1027,16 +1058,21 @@ fn bullet_hit(
                 } else if let Some((bullet_entity, player_entity )) =
                     match_bullet_hit_pair::<
                         Player,
-                        (Entity, &Transform)
+                        (Entity, &Transform, Option<&Invincible>)
                     >(*entity1, *entity2, &bullets, &player)
                 {
                     // player death
-                    lives.0 = (lives.0 - 1).max(0);
+                    if let Ok((_, player_transform, invincible)) = player.get_single() {
 
-                    let dropped_power = (powers.0 as f32 * 0.5).ceil() as u32;
-                    powers.0 = 0;
+                        if invincible.is_some() {
+                            continue
+                        }
 
-                    if let Ok((_, player_transform)) = player.get_single() {
+                        lives.0 = (lives.0 - 1).max(0);
+
+                        let dropped_power = (powers.0 as f32 * 0.5).ceil() as u32;
+                        powers.0 = 0;
+
                         let player_pos = player_transform.translation.truncate();
 
                         for _ in 0..dropped_power {
@@ -1103,7 +1139,10 @@ fn bullet_hit(
                         }
                     }
 
-                    commands.entity(player_entity).despawn_recursive();
+                    commands.entity(player_entity)
+                        .insert(Visibility::Hidden)
+                        .insert(Invincible(Timer::from_seconds(3.0, TimerMode::Once)))
+                        .insert(Transform::from_translation(PLAYER_RESPAWN_POS));
                     commands.entity(bullet_entity).despawn();
                 }
 
@@ -1508,6 +1547,7 @@ fn setup(
         Sensor,
         Collider::ball(5.0),
         Velocity::zero(),
+        Transform::from_translation(PLAYER_RESPAWN_POS),
 
         ActiveEvents::COLLISION_EVENTS,
         CollisionGroups::new(Group::GROUP_1, Group::GROUP_4 | Group::GROUP_6 | Group::GROUP_8)
@@ -1684,6 +1724,7 @@ fn main() {
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyX)))
         .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
+        .add_systems(Update, tick_invincibility)
         .add_systems(Update, enemy_death_particles)
         .add_systems(Update, player_death_particles)
         .add_systems(Update, enemy_hit_particles)

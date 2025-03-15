@@ -25,6 +25,8 @@ impl BulletTarget {
 
 #[derive(Component)]
 struct EnemyDeathParticle(Timer);
+#[derive(Component)]
+struct EnemyHitParticle(Timer);
 #[derive(Component, Clone)]
 struct HomingBullet {
     speed: f32,
@@ -736,6 +738,25 @@ fn item_gravity(
     }
 }
 
+fn enemy_hit_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut EnemyHitParticle, &mut TextColor)>,
+) {
+    for (entity, mut timer, mut color) in query.iter_mut() {
+        timer.0.tick(time.delta());
+
+        let progress = timer.0.elapsed_secs() / timer.0.duration().as_secs_f32();
+        let alpha = (1.0 - progress.powf(2.0)).clamp(0.0, 1.0);
+
+        color.0.set_alpha(alpha);
+
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 fn enemy_death_particles(
     mut commands: Commands,
     time: Res<Time>,
@@ -766,7 +787,7 @@ fn match_bullet_hit_pair<
 >(
     entity1: Entity,
     entity2: Entity,
-    bullets: &Query<(Entity, &BulletTarget)>,
+    bullets: &Query<(Entity, &BulletTarget, &Transform)>,
     targets: &Query<D, With<Target>>,
 ) -> Option<(Entity, Entity)> {
     if bullets.get(entity1).is_ok() && targets.get(entity2).is_ok() {
@@ -784,7 +805,7 @@ fn bullet_hit(
 
     mut enemies: Query<(Entity, &mut Health, &Transform), With<Enemy>>,
     player: Query<Entity, With<Player>>,
-    bullets: Query<(Entity, &BulletTarget)>,
+    bullets: Query<(Entity, &BulletTarget, &Transform)>,
 
     mut lives: ResMut<PlayerLives>,
     font: Res<AsciiFont>,
@@ -800,6 +821,35 @@ fn bullet_hit(
                 {
                     if let Ok((enemy_ent, mut health, transform)) = enemies.get_mut(enemy_entity) {
                         health.0 -= 1;
+
+                        // generate enemy hit particle
+                        let chars = ["(", ")", "<", ">", "{", "}", "[", "]"];
+                        let random_char = chars[rand::random::<usize>() % chars.len()];
+                        let random_rotation = Quat::from_rotation_z(rand::random::<f32>() * std::f32::consts::TAU);
+
+                        let gray = 0.3 + rand::random::<f32>() * 0.3;
+                        let random_color = Color::srgb(gray, gray, gray);
+
+                        if let Ok((_, _, bullet_transform)) = bullets.get(bullet_entity) {
+                            commands.spawn((
+                                EnemyHitParticle(Timer::from_seconds(0.5, TimerMode::Once)),
+                                Text2d::new(random_char),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 45.0,
+                                    ..default()
+                                },
+                                TextLayout::default(),
+                                TextColor(random_color),
+                                Transform {
+                                    translation: bullet_transform.translation.xy().extend(-5.0), // 在子弹位置
+                                    rotation: random_rotation,
+                                    ..default()
+                                },
+                            ));
+                        }
+
+                        // enemy death
                         if health.0 <= 0 {
                             let power_count = rand::random::<u32>() % 3 + 1;
                             const ITEM_SPEED: f32 = 50.0;
@@ -896,7 +946,7 @@ fn bullet_hit(
                             commands.entity(enemy_ent).despawn();
                         }
                     }
-                    commands.entity(bullet_entity).despawn_recursive();
+                    commands.entity(bullet_entity).despawn();
                 } else if let Some((bullet_entity, _ )) =
                     match_bullet_hit_pair::<
                         Player,
@@ -904,7 +954,7 @@ fn bullet_hit(
                     >(*entity1, *entity2, &bullets, &player)
                 {
                     lives.0 = (lives.0 - 1).max(0);
-                    commands.entity(bullet_entity).despawn_recursive();
+                    commands.entity(bullet_entity).despawn();
                 }
 
             }
@@ -1382,6 +1432,7 @@ fn main() {
         .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
         .add_systems(Update, enemy_death_particles)
+        .add_systems(Update, enemy_hit_particles)
         .add_systems(Update, show_judge_point.run_if(input_just_pressed(KeyCode::ShiftLeft)))
         .add_systems(Update, hide_judge_point.run_if(input_just_released(KeyCode::ShiftLeft)))
         .add_systems(Update, support_unit_focus.run_if(input_pressed(KeyCode::ShiftLeft)))

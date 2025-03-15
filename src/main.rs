@@ -36,8 +36,9 @@ struct SpiralBullet {
     radius_growth: f32,
     angular_speed: f32, // rad/s
     angle: f32, // current angle in rad
-    forward_velocity: f32,
+    forward_velocity: Vec2,
 }
+#[derive(Clone)]
 enum BulletType {
     Normal,
     Homing(HomingBullet),
@@ -65,6 +66,7 @@ struct BulletBundle {
     collision_groups: CollisionGroups,
 }
 
+#[derive(Clone)]
 struct BulletInfo {
     bullet_type: BulletType,
     target: BulletTarget,
@@ -353,7 +355,18 @@ fn fan_shoot(
                 Velocity::linear(direction),
             ));
 
-            shoot.bullet.bullet_type.insert_into(&mut entity);
+            match shoot.bullet.clone().bullet_type {
+                BulletType::Normal => {
+                    shoot.bullet.bullet_type.insert_into(&mut entity);
+                }
+                BulletType::Homing(homing) => {
+                    BulletType::Homing(homing).insert_into(&mut entity);
+                }
+                BulletType::Spiral(mut spiral) => {
+                    spiral.forward_velocity = direction.normalize_or_zero() * spiral.forward_velocity.length();
+                    BulletType::Spiral(spiral).insert_into(&mut entity);
+                }
+            }
         }
 
         shoot.cooldown.reset();
@@ -535,7 +548,7 @@ fn spawn_enemies(
                         radius: rand::random::<f32>() * 60.0 + 20.0,
                         radius_growth: rand::random::<f32>() * 10.0 - 5.0,
                         angle: rand::random::<f32>() * std::f32::consts::TAU,
-                        forward_velocity: shoot_direction.length() * (rand::random::<f32>() * 0.3 + 0.5),
+                        forward_velocity: shoot_direction * (rand::random::<f32>() * 0.3 + 0.5),
                     }),
                     target: BulletTarget::Player,
                     text: Text2d::new("o"),

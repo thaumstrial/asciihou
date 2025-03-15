@@ -884,6 +884,7 @@ fn bullet_hit(
     bullets: Query<(Entity, &BulletTarget, &Transform)>,
 
     mut lives: ResMut<PlayerLives>,
+    mut powers: ResMut<PlayerPowers>,
     font: Res<AsciiFont>,
 ) {
     for event in collision_events.read() {
@@ -1023,7 +1024,7 @@ fn bullet_hit(
                         }
                     }
                     commands.entity(bullet_entity).despawn();
-                } else if let Some((bullet_entity, _ )) =
+                } else if let Some((bullet_entity, player_entity )) =
                     match_bullet_hit_pair::<
                         Player,
                         (Entity, &Transform)
@@ -1032,7 +1033,44 @@ fn bullet_hit(
                     // player death
                     lives.0 = (lives.0 - 1).max(0);
 
+                    let dropped_power = (powers.0 as f32 * 0.5).ceil() as u32;
+                    powers.0 = 0;
+
                     if let Ok((_, player_transform)) = player.get_single() {
+                        let player_pos = player_transform.translation.truncate();
+
+                        for _ in 0..dropped_power {
+                            let base_angle = std::f32::consts::FRAC_PI_2;
+                            let spread_range = std::f32::consts::FRAC_PI_8;
+
+                            let angle = base_angle + (rand::random::<f32>() - 0.5) * 2.0 * spread_range;
+                            let speed = rand::random::<f32>() * 100.0 + 100.0;
+                            let dir = Vec2::from_angle(angle) * speed;
+
+                            commands.spawn((
+                                PowerItem,
+                                Sprite::from_color(Color::Srgba(RED_400), Vec2::new(20.0, 20.0)),
+                                Transform::from_translation(player_pos.extend(-1.0)),
+                                Collider::ball(8.0),
+                                RigidBody::KinematicVelocityBased,
+                                Velocity::linear(dir),
+                                ActiveEvents::COLLISION_EVENTS,
+                                CollisionGroups::new(Group::GROUP_6, Group::GROUP_1),
+                            )).with_children(|builder| {
+                                builder.spawn((
+                                    Text2d::new("P"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 25.0,
+                                        ..default()
+                                    },
+                                    TextLayout::default(),
+                                    TextColor(Color::Srgba(WHITE)),
+                                    Transform::from_translation(Vec3::Z),
+                                ));
+                            });
+                        }
+
                         let num_particles = rand::random::<i32>().abs() % 4 + 8;
                         for _ in 0..num_particles {
                             let hex_str = format!("0x{:02X}", rand::random::<u8>());
@@ -1046,7 +1084,7 @@ fn bullet_hit(
                             let dir = Vec2::from_angle(angle) * speed;
 
                             commands.spawn((
-                                PlayerDeathParticle(Timer::from_seconds(rand::random::<f32>() * 1.5 + 1.5, TimerMode::Once)),
+                                PlayerDeathParticle(Timer::from_seconds(rand::random::<f32>() * 1.5 + 2.0, TimerMode::Once)),
                                 Text2d::new(hex_str),
                                 TextFont {
                                     font: font.0.clone(),
@@ -1055,7 +1093,7 @@ fn bullet_hit(
                                 },
                                 TextLayout::default(),
                                 TextColor(color),
-                                Transform::from_translation(player_transform.translation.truncate().extend(2.0)),
+                                Transform::from_translation(player_pos.extend(2.0)),
                                 RigidBody::KinematicVelocityBased,
                                 Velocity {
                                     linvel: dir,
@@ -1064,6 +1102,8 @@ fn bullet_hit(
                             ));
                         }
                     }
+
+                    commands.entity(player_entity).despawn_recursive();
                     commands.entity(bullet_entity).despawn();
                 }
 

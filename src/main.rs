@@ -1,6 +1,6 @@
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
-use bevy::color::palettes::tailwind::{BLUE_400, GREEN_400, RED_400};
+use bevy::color::palettes::tailwind::*;
 use bevy::DefaultPlugins;
 use bevy::ecs::query::QueryData;
 use bevy::input::common_conditions::*;
@@ -38,11 +38,18 @@ struct SpiralBullet {
     angle: f32, // current angle in rad
     forward_velocity: Vec2,
 }
+#[derive(Component, Clone)]
+struct LaserBullet {
+    telegraph_duration: Timer,
+    duration: Timer,
+    animation_timer: Timer,
+}
 #[derive(Clone)]
 enum BulletType {
     Normal,
     Homing(HomingBullet),
     Spiral(SpiralBullet),
+    Laser(LaserBullet),
 }
 impl BulletType {
     pub fn insert_into(&self, entity: &mut EntityCommands) {
@@ -50,6 +57,7 @@ impl BulletType {
             BulletType::Normal => {}
             BulletType::Homing(homing) => { entity.insert(homing.clone()); },
             BulletType::Spiral(spiral) => { entity.insert(spiral.clone()); },
+            BulletType::Laser(laser) => { entity.insert(laser.clone()); },
         }
     }
 }
@@ -257,6 +265,61 @@ fn linear_movement(
     }
 }
 
+fn laser_bullet(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(
+        Entity,
+        &mut LaserBullet,
+        &mut TextColor,
+        &mut CollisionGroups,
+        &mut Text2d,
+        &BulletTarget,
+    )>,
+) {
+    for (
+        laser_entity,
+        mut laser,
+        mut text_color,
+        mut groups,
+        mut text,
+        target,
+    ) in query.iter_mut() {
+        if !laser.telegraph_duration.finished() {
+            // telegraph phase
+            laser.telegraph_duration.tick(time.delta());
+
+            let progress = laser.telegraph_duration.elapsed_secs()
+                / laser.telegraph_duration.duration().as_secs_f32();
+            let eased_alpha = progress.clamp(0.0, 1.0).powf(5.0);
+
+            let mut color = text_color.0;
+            color.set_alpha(eased_alpha);
+            text_color.0 = color;
+
+            if laser.telegraph_duration.finished() {
+                *groups = target.collision_groups();
+            }
+        } else {
+            if laser.duration.finished() {
+                commands.entity(laser_entity).despawn();
+            } else {
+                laser.duration.tick(time.delta());
+
+                if !laser.animation_timer.finished() {
+                    laser.animation_timer.tick(time.delta());
+
+                    let total_rows = text.0.lines().count();
+                    let v_progress = laser.animation_timer.elapsed_secs() / laser.animation_timer.duration().as_secs_f32();
+                    let rows_to_replace = (total_rows as f32 * v_progress.clamp(0.0, 1.0)).ceil() as usize;
+
+                    text.0 = format!("{}{}","V\n".repeat(rows_to_replace), "!\n".repeat(total_rows - rows_to_replace));
+                }
+            }
+        }
+    }
+}
+
 fn homing_bullet_find_nearest<'a>(
     reference: Vec3,
     targets: impl Iterator<Item = &'a Transform>,
@@ -313,20 +376,43 @@ fn single_shoot(
     mut query: Query<(&GlobalTransform, &mut SingleShoot)>,
     time: Res<Time>,
 ) {
-    for (transform, mut single_shot) in query.iter_mut() {
-        single_shot.cooldown.tick(time.delta());
+    for (transform, mut shoot) in query.iter_mut() {
+        shoot.cooldown.tick(time.delta());
 
-        if single_shot.cooldown.finished() {
+        if shoot.cooldown.finished() {
             let spawn_pos = transform.translation();
 
-            let mut entity = commands.spawn((
-                single_shot.bullet.to_bundle(),
+            let mut bullet_entity = commands.spawn((
+                shoot.bullet.to_bundle(),
                 Transform::from_translation(spawn_pos),
-                Velocity::linear(single_shot.velocity),
+                Velocity::linear(shoot.velocity),
             ));
-            single_shot.bullet.bullet_type.insert_into(&mut entity);
 
-            single_shot.cooldown.reset();
+            match shoot.bullet.clone().bullet_type {
+                BulletType::Normal => {
+                    shoot.bullet.bullet_type.insert_into(&mut bullet_entity);
+                }
+                BulletType::Homing(_) => {
+                    shoot.bullet.bullet_type.insert_into(&mut bullet_entity);
+                }
+                BulletType::Spiral(mut spiral) => {
+                    spiral.forward_velocity = shoot.velocity;
+                    BulletType::Spiral(spiral).insert_into(&mut bullet_entity);
+                }
+                BulletType::Laser(_) => {
+                    let rotation = Quat::from_rotation_z(shoot.velocity.normalize_or_zero().to_angle());
+                    bullet_entity.insert(Transform {
+                        translation: spawn_pos,
+                        rotation,
+                        ..default()
+                    });
+                    bullet_entity.insert(CollisionGroups::new(Group::NONE, Group::NONE));
+                    bullet_entity.insert(Velocity::zero());
+                    shoot.bullet.bullet_type.insert_into(&mut bullet_entity);
+                }
+            }
+
+            shoot.cooldown.reset();
         }
     }
 }
@@ -349,7 +435,7 @@ fn fan_shoot(
             let angle_rad = (offset_index as f32) * shoot.angle_deg.to_radians();
             let direction = Vec2::from_angle(angle_rad).rotate(base_direction);
 
-            let mut entity = commands.spawn((
+            let mut bullet_entity = commands.spawn((
                 shoot.bullet.to_bundle(),
                 Transform::from_translation(transform.translation()),
                 Velocity::linear(direction),
@@ -357,14 +443,25 @@ fn fan_shoot(
 
             match shoot.bullet.clone().bullet_type {
                 BulletType::Normal => {
-                    shoot.bullet.bullet_type.insert_into(&mut entity);
+                    shoot.bullet.bullet_type.insert_into(&mut bullet_entity);
                 }
-                BulletType::Homing(homing) => {
-                    BulletType::Homing(homing).insert_into(&mut entity);
+                BulletType::Homing(_) => {
+                    shoot.bullet.bullet_type.insert_into(&mut bullet_entity);
                 }
                 BulletType::Spiral(mut spiral) => {
                     spiral.forward_velocity = direction.normalize_or_zero() * spiral.forward_velocity.length();
-                    BulletType::Spiral(spiral).insert_into(&mut entity);
+                    BulletType::Spiral(spiral).insert_into(&mut bullet_entity);
+                }
+                BulletType::Laser(_) => {
+                    let rotation = Quat::from_rotation_z(direction.normalize_or_zero().to_angle());
+                    bullet_entity.insert(Transform {
+                        translation: transform.translation(),
+                        rotation,
+                        ..default()
+                    });
+                    bullet_entity.insert(CollisionGroups::new(Group::NONE, Group::NONE));
+                    bullet_entity.insert(Velocity::zero());
+                    shoot.bullet.bullet_type.insert_into(&mut bullet_entity);
                 }
             }
         }
@@ -513,7 +610,7 @@ fn spawn_enemies(
             let shoot_rand = rand::random::<f32>();
 
             let bullet_info = match bullet_rand {
-                x if x < 0.3 => BulletInfo {
+                x if x < 0.25 => BulletInfo {
                     bullet_type: BulletType::Normal,
                     target: BulletTarget::Player,
                     text: Text2d::new("o"),
@@ -526,7 +623,7 @@ fn spawn_enemies(
                     text_color: TextColor(Color::Srgba(WHITE)),
                     collider: Collider::ball(5.0),
                 },
-                x if x < 0.6 => BulletInfo {
+                x if x < 0.5 => BulletInfo {
                     bullet_type: BulletType::Homing(HomingBullet {
                         speed: shoot_direction.length() * (rand::random::<f32>() * 1.0 + 1.0),
                         rotate_speed: rand::random::<f32>() * 0.4 + 0.1,
@@ -541,6 +638,35 @@ fn spawn_enemies(
                     text_layout: Default::default(),
                     text_color: TextColor(Color::Srgba(GOLD)),
                     collider: Collider::ball(5.0),
+                },
+                x if x < 0.6 => {
+                    let laser_length: f32 = 1600.0;
+                    let laser_font_size: f32 = 30.0;
+
+                    let collider_x = laser_font_size / 3.5;
+                    let collider_y = laser_length / 2.0;
+
+                    let laser_text = "!\n".repeat((laser_length / laser_font_size / 1.2).floor() as usize);
+                    let mut initial_color = Color::Srgba(RED_500);
+                    initial_color.set_alpha(0.0);
+
+                    BulletInfo {
+                        bullet_type: BulletType::Laser(LaserBullet {
+                            telegraph_duration: Timer::from_seconds(3.0, TimerMode::Once),
+                            duration: Timer::from_seconds(2.0, TimerMode::Once),
+                            animation_timer: Timer::from_seconds(0.2, TimerMode::Once),
+                        }),
+                        target: BulletTarget::Player,
+                        text: Text2d::new(laser_text),
+                        text_font: TextFont {
+                            font: font.0.clone(),
+                            font_size: laser_font_size,
+                            ..default()
+                        },
+                        text_layout: Default::default(),
+                        text_color: TextColor(initial_color),
+                        collider: Collider::cuboid(collider_x, collider_y),
+                    }
                 },
                 _ => BulletInfo {
                     bullet_type: BulletType::Spiral(SpiralBullet {
@@ -1240,6 +1366,7 @@ fn main() {
         .add_systems(Startup, setup)
         .add_systems(Update, toggle_debug_render)
         .add_systems(Update, spawn_enemies)
+        .add_systems(Update, laser_bullet)
         .add_systems(Update, linear_movement)
         .add_systems(Update, auto_zoom_camera)
         .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))

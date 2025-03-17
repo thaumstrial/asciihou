@@ -1338,7 +1338,7 @@ fn player_graze(
                             velocity.linvel *= GRAZE_DECAY;
 
                             let original = text_color.0;
-                            commands.entity(entity).insert(GrazingBullet{
+                            commands.entity(entity).insert(GrazingBullet {
                                 speed_decay: GRAZE_DECAY,
                                 original_color: original
                             });
@@ -1808,7 +1808,7 @@ fn main() {
         ).run_if(in_state(GameState::Running)))
         .add_systems(Update, (
             bullet_hit,
-            player_graze,
+            player_graze.before(bullet_hit).before(laser_bullet),
             item_hit
         ).run_if(on_event::<CollisionEvent>))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyX)))

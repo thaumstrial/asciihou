@@ -72,6 +72,8 @@ fn setup_start(
         .spawn((
             StateScoped(MainMenuState::Start),
             Node {
+                justify_content: JustifyContent::SpaceEvenly,
+
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
                 ..default()
@@ -80,6 +82,9 @@ fn setup_start(
             parent
                 .spawn(Node {
                     flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::FlexStart,
+                    width: Val::Percent(100.0),
                     margin: UiRect {
                         left: Val::Px(font_size),
                         top: Val::Px(font_size),
@@ -125,6 +130,46 @@ fn setup_start(
                             }
                         });
                 });
+
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    width: Val::Percent(100.0),
+                    margin: UiRect {
+                        top: Val::Px(font_size),
+                        ..default()
+                    },
+                    ..default()
+            }).with_children(|parent| {
+                parent.spawn((
+                    Text::new("Character:"),
+                    text_font.clone(),
+                    TextLayout::new_with_justify(JustifyText::Left),
+                    TextColor(Color::Srgba(WHITE)),
+                ));
+            });
+
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::FlexStart,
+                    align_items: AlignItems::Center,
+                    width: Val::Percent(100.0),
+                    margin: UiRect {
+                        top: Val::Px(font_size),
+                        ..default()
+                    },
+                    ..default()
+                }).with_children(|parent| {
+                parent.spawn((
+                    Text::new("Spell Card:"),
+                    text_font.clone(),
+                    TextLayout::new_with_justify(JustifyText::Left),
+                    TextColor(Color::Srgba(WHITE)),
+                ));
+            });
         });
 }
 

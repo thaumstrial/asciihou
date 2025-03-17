@@ -17,13 +17,116 @@ enum MainMenuState {
     Option,
     Quit,
 }
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(MainMenuState = MainMenuState::Start)]
+enum StartState {
+    #[default]
+    Difficulty,
+    Character,
+    SpellCard,
+}
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(StartState = StartState::Difficulty)]
+enum DifficultyState {
+    #[default]
+    Choosing,
+    Easy,
+    Normal,
+    Hard,
+    Lunatic
+}
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(StartState = StartState::Character)]
+enum CharacterState {
+    #[default]
+    Reimu,
+    Marisa,
+}
 #[derive(Resource)]
-pub struct SelectedMenuEntry {
-    pub selected: MainMenuState,
-    pub repeat_timer: Timer,
+struct SelectedMenuEntry {
+    selected: MainMenuState,
+    repeat_timer: Timer,
+}
+#[derive(Resource)]
+struct SelectedDifficulty {
+    selected: DifficultyState,
+    repeat_timer: Timer,
 }
 #[derive(Component)]
 struct MainMenuEntry(MainMenuState);
+#[derive(Component)]
+struct DifficultyEntry(DifficultyState);
+
+fn setup_start(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+) {
+    let font_size = 40.0;
+    let text_font = TextFont {
+        font: font.0.clone(),
+        font_size: font_size.clone(),
+        ..default()
+    };
+
+    commands
+        .spawn((
+            StateScoped(MainMenuState::Start),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                ..default()
+            }))
+        .with_children(|parent| {
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    margin: UiRect {
+                        left: Val::Px(font_size),
+                        top: Val::Px(font_size),
+                        ..default()
+                    },
+                    ..default()
+                })
+                .with_children(|parent| {
+                    parent.spawn((
+                        Text::new("Difficulty:"),
+                        text_font.clone(),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextColor(Color::Srgba(WHITE)),
+                    ));
+                    parent
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            ..default()
+                        })
+                        .with_children(|parent| {
+                            let difficulties = vec![
+                                (DifficultyState::Easy, "[X] Easy"),
+                                (DifficultyState::Normal, "[ ] Normal"),
+                                (DifficultyState::Hard, "[ ] Hard"),
+                                (DifficultyState::Lunatic, "[ ] Lunatic"),
+                            ];
+
+                            for (entry, d) in difficulties {
+                                parent.spawn(
+                                    Node {
+                                        left: Val::Px(font_size * 2.0),
+                                        ..default()
+                                    }
+                                ).with_children(|parent| {
+                                    parent.spawn((
+                                        DifficultyEntry(entry),
+                                        Text::new(d),
+                                        text_font.clone(),
+                                        TextLayout::new_with_justify(JustifyText::Left),
+                                        TextColor(Color::Srgba(WHITE)),
+                                    ));
+                                });
+                            }
+                        });
+                });
+        });
+}
 
 fn setup_main_menu(
     mut commands: Commands,
@@ -31,6 +134,11 @@ fn setup_main_menu(
 ) {
     commands.insert_resource(SelectedMenuEntry {
         selected: MainMenuState::Start,
+        repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+    });
+
+    commands.insert_resource(SelectedDifficulty {
+        selected: DifficultyState::Easy,
         repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
     });
 
@@ -42,18 +150,21 @@ fn setup_main_menu(
     };
 
     commands
-        .spawn(Node {
-            justify_content: JustifyContent::FlexEnd,
-            align_items: AlignItems::FlexEnd,
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            ..default()
-        })
+        .spawn((
+            StateScoped(MainMenuState::Choosing),
+            Node {
+                justify_content: JustifyContent::FlexEnd,
+                align_items: AlignItems::FlexEnd,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                ..default()
+        }))
         .with_children(|parent| {
            parent.spawn(Node {
                flex_direction: FlexDirection::Column,
                margin: UiRect {
                    right: Val::Px(200.0),
+                   bottom: Val::Px(font_size),
                    ..default()
                },
                ..default()
@@ -71,12 +182,12 @@ fn setup_main_menu(
                    ];
 
                    for (i, (state, label)) in menu_items.iter().enumerate() {
-                       parent.spawn((
+                       parent.spawn(
                            Node {
                                left: Val::Px((menu_items.len() - i) as f32 * font_size * 0.5),
                                ..default()
                            }
-                       )).with_children(|parent| {
+                       ).with_children(|parent| {
                            parent.spawn((
                                MainMenuEntry(*state),
                                Text::new(*label),
@@ -200,6 +311,25 @@ fn setup_in_game(
         PlayerPointsText,
     ));
 }
+
+fn difficulty_update_texts(
+    selected: Res<SelectedDifficulty>,
+    mut texts: Query<(&DifficultyEntry, &mut Text)>,
+) {
+    if !selected.is_changed() {
+        return;
+    }
+
+    for (entry, mut text) in texts.iter_mut() {
+        let label = text.0.trim_start_matches(['[', 'X', ']', ' ']);
+        if entry.0 == selected.selected {
+            text.0 = format!("[X] {}", label);
+        } else {
+            text.0 = format!("[ ] {}", label);
+        }
+    }
+}
+
 fn main_menu_update_texts(
     selected: Res<SelectedMenuEntry>,
     mut texts: Query<(&MainMenuEntry, &mut Text)>,
@@ -216,6 +346,57 @@ fn main_menu_update_texts(
             text.0 = format!("  {}", label);
         }
     }
+}
+
+fn navigation_direction(
+    keyboard_input: &ButtonInput<KeyCode>,
+    timer: &mut Timer,
+    delta: &std::time::Duration,
+) -> isize {
+    let mut direction = 0;
+
+    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
+        direction = -1;
+        timer.reset();
+    } else if keyboard_input.just_pressed(KeyCode::ArrowDown) {
+        direction = 1;
+        timer.reset();
+    } else if keyboard_input.pressed(KeyCode::ArrowUp) {
+        timer.tick(*delta);
+        if timer.finished() {
+            direction = -1;
+        }
+    } else if keyboard_input.pressed(KeyCode::ArrowDown) {
+        timer.tick(*delta);
+        if timer.finished() {
+            direction = 1;
+        }
+    } else {
+        timer.reset();
+    }
+
+    direction
+}
+
+fn difficulty_selection(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut selected: ResMut<SelectedDifficulty>,
+) {
+    use DifficultyState::*;
+
+    let order = [Easy, Normal, Hard, Lunatic];
+
+    let direction = navigation_direction(&keyboard_input, &mut selected.repeat_timer, &time.delta());
+
+    if direction == 0 {
+        return;
+    }
+
+    let current = selected.selected;
+    let current_index = order.iter().position(|s| *s == current).unwrap_or(0);
+    let new_index = (current_index as isize + direction + order.len() as isize) % order.len() as isize;
+    selected.selected = order[new_index as usize];
 }
 
 fn main_menu_selection(
@@ -236,27 +417,7 @@ fn main_menu_selection(
         Quit,
     ];
 
-    let mut direction = 0;
-
-    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
-        direction = -1;
-        selected.repeat_timer.reset();
-    } else if keyboard_input.just_pressed(KeyCode::ArrowDown) {
-        direction = 1;
-        selected.repeat_timer.reset();
-    } else if keyboard_input.pressed(KeyCode::ArrowUp) {
-        selected.repeat_timer.tick(time.delta());
-        if selected.repeat_timer.finished() {
-            direction = -1;
-        }
-    } else if keyboard_input.pressed(KeyCode::ArrowDown) {
-        selected.repeat_timer.tick(time.delta());
-        if selected.repeat_timer.finished() {
-            direction = 1;
-        }
-    } else {
-        selected.repeat_timer.reset();
-    }
+    let direction = navigation_direction(&keyboard_input, &mut selected.repeat_timer, &time.delta());
 
     if direction == 0 {
         return;
@@ -268,14 +429,17 @@ fn main_menu_selection(
     selected.selected = order[new_index as usize];
 }
 
+fn difficulty_confirm_selection(
+    mut next_state: ResMut<NextState<StartState>>,
+) {
+    next_state.set(StartState::Character);
+}
+
 fn main_menu_confirm_selection(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
     selected: Res<SelectedMenuEntry>,
     mut next_state: ResMut<NextState<MainMenuState>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Enter) || keyboard_input.just_pressed(KeyCode::KeyZ) {
-        next_state.set(selected.selected);
-    }
+    next_state.set(selected.selected);
 }
 
 fn main_menu_reset_selection(
@@ -283,6 +447,13 @@ fn main_menu_reset_selection(
 ) {
     selected.selected = MainMenuState::Quit;
 }
+
+fn difficulty_quit(
+    mut next_state: ResMut<NextState<MainMenuState>>,
+) {
+    next_state.set(MainMenuState::Choosing);
+}
+
 
 fn main_menu_quit(
     mut next_state: ResMut<NextState<MainMenuState>>,
@@ -298,21 +469,38 @@ fn main_menu_handle_quit(
     exit_writer.send(AppExit::Success);
 }
 
+fn back_key_just_pressed(input: Res<ButtonInput<KeyCode>>) -> bool {
+    input.just_pressed(KeyCode::KeyX) || input.just_pressed(KeyCode::Escape)
+}
+
+fn confirm_key_just_pressed(input: Res<ButtonInput<KeyCode>>) -> bool {
+    input.just_pressed(KeyCode::KeyZ) || input.just_pressed(KeyCode::Enter)
+}
 
 pub struct GameUiPlugin;
 impl Plugin for GameUiPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_sub_state::<MainMenuState>()
-            .add_systems(OnEnter(AppState::MainMenu), setup_main_menu)
+            .add_sub_state::<StartState>()
+            .add_sub_state::<DifficultyState>()
+            .enable_state_scoped_entities::<MainMenuState>()
+            .add_systems(OnEnter(MainMenuState::Choosing), setup_main_menu)
             .add_systems(OnEnter(AppState::InGame), setup_in_game)
             .add_systems(Update, (
                 main_menu_selection,
-                main_menu_confirm_selection,
+                main_menu_confirm_selection.run_if(confirm_key_just_pressed),
                 main_menu_update_texts.run_if(resource_changed::<SelectedMenuEntry>),
-                main_menu_reset_selection.run_if(input_just_pressed(KeyCode::KeyX)),
+                main_menu_reset_selection.run_if(back_key_just_pressed),
                 main_menu_quit.run_if(input_just_pressed(KeyCode::KeyQ)),
             ).run_if(in_state(MainMenuState::Choosing)))
-            .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit);
+            .add_systems(Update, (
+                difficulty_selection,
+                difficulty_update_texts.run_if(resource_changed::<SelectedDifficulty>),
+                difficulty_confirm_selection.run_if(confirm_key_just_pressed),
+                difficulty_quit.run_if(back_key_just_pressed),
+            ).run_if(in_state(DifficultyState::Choosing)))
+            .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)
+            .add_systems(OnEnter(MainMenuState::Start), setup_start);
     }
 }

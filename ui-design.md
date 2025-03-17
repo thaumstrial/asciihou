@@ -12,10 +12,11 @@ Quit
 ```
 ## Start
 ```
-Easy
-Normal
-Hard
-Lunatic
+Difficulty:      Character:       Spell Card: 
+    [X] Easy                        [X] 梦想封印
+    [ ] Normal                      [ ]
+    [ ] Hard
+    [ ] Lunatic
 ```
 -> Character Select
 ## Character Select

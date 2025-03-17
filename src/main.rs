@@ -16,8 +16,9 @@ use bevy::core_pipeline::bloom::BloomPrefilter;
 const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 enum AppState {
-    #[default]
+    // #[default]
     MainMenu,
+    #[default]
     InGame,
 }
 #[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -686,6 +687,7 @@ fn spawn_enemies(
                 Enemy,
                 RigidBody::Dynamic,
                 Sensor,
+                GravityScale(0.0),
                 Collider::ball(10.0),
                 Velocity::zero(),
                 ActiveEvents::COLLISION_EVENTS,
@@ -1528,6 +1530,25 @@ fn auto_zoom_camera(
 
     }
 }
+fn pause_game(
+    mut next_state: ResMut<NextState<GameState>>,
+    mut rapier_query: Query<&mut RapierConfiguration>,
+) {
+    next_state.set(GameState::Paused);
+    if let Ok(mut rapier) = rapier_query.get_single_mut() {
+        rapier.physics_pipeline_active = false;
+    }
+}
+
+fn resume_game(
+    mut next_state: ResMut<NextState<GameState>>,
+    mut rapier_query: Query<&mut RapierConfiguration>,
+) {
+    next_state.set(GameState::Running);
+    if let Ok(mut rapier) = rapier_query.get_single_mut() {
+        rapier.physics_pipeline_active = true;
+    }
+}
 
 fn setup(
     mut commands: Commands,
@@ -1579,6 +1600,7 @@ fn setup(
 
         RigidBody::Dynamic,
         Sensor,
+        GravityScale(0.0),
         Collider::ball(5.0),
         Velocity::zero(),
         Transform::from_translation(PLAYER_RESPAWN_POS),
@@ -1749,6 +1771,12 @@ fn main() {
         .add_sub_state::<GameState>()
         .add_systems(Startup, setup)
         .add_systems(Update, auto_zoom_camera)
+        .add_systems(Update, pause_game
+            .run_if(in_state(GameState::Running)
+            .and(input_just_pressed(KeyCode::Escape))))
+        .add_systems(Update, resume_game
+            .run_if(in_state(GameState::Paused)
+            .and(input_just_pressed(KeyCode::Enter))))
         .add_systems(Update, (
             toggle_debug_render,
             spawn_enemies,
@@ -1777,7 +1805,7 @@ fn main() {
             update_graze_text.run_if(resource_changed::<PlayerGraze>),
             update_points_text.run_if(resource_changed::<PlayerPoints>)
 
-        ))
+        ).run_if(in_state(GameState::Running)))
         .add_systems(Update, (
             bullet_hit,
             player_graze,
@@ -1794,11 +1822,13 @@ fn main() {
             homing_bullet,
             spiral_bullet,
             attract_items
-        ))
+        ).run_if(in_state(GameState::Running)))
         .add_systems(
             RunFixedMainLoop,
             (
-                player_movement.in_set(RunFixedMainLoopSystem::BeforeFixedMainLoop),
+                player_movement
+                    .in_set(RunFixedMainLoopSystem::BeforeFixedMainLoop)
+                    .run_if(in_state(GameState::Running)),
             )
         )
         .run();

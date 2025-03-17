@@ -1,5 +1,5 @@
 use bevy::color::palettes::basic::{GRAY, WHITE};
-use bevy::input::common_conditions::{input_pressed};
+use bevy::input::common_conditions::{input_just_pressed, input_pressed};
 use bevy::input::keyboard::KeyboardInput;
 use bevy::prelude::*;
 use crate::{AppState, AsciiFont, GameState, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
@@ -201,12 +201,28 @@ fn setup_in_game(
         PlayerPointsText,
     ));
 }
+fn main_menu_update_texts(
+    selected: Res<SelectedMenuEntry>,
+    mut texts: Query<(&MainMenuEntry, &mut Text)>,
+) {
+    if !selected.is_changed() {
+        return;
+    }
+
+    for (entry, mut text) in texts.iter_mut() {
+        let label = text.0.trim_start_matches(['>', ' ']);
+        if entry.0 == selected.selected {
+            text.0 = format!("> {}", label);
+        } else {
+            text.0 = format!("  {}", label);
+        }
+    }
+}
 
 fn main_menu_selection(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut selected: ResMut<SelectedMenuEntry>,
-    mut texts: Query<(&MainMenuEntry, &mut Text)>,
 ) {
     use MainMenuState::*;
 
@@ -250,18 +266,31 @@ fn main_menu_selection(
     let current = selected.selected;
     let current_index = order.iter().position(|s| *s == current).unwrap_or(0);
     let new_index = (current_index as isize + direction + order.len() as isize) % order.len() as isize;
-    let new_state = order[new_index as usize];
-    selected.selected = new_state;
+    selected.selected = order[new_index as usize];
+}
 
-    for (entry, mut text) in texts.iter_mut() {
-        let label = text.0.trim_start_matches(['>', ' ']);
-        if entry.0 == new_state {
-            text.0 = format!("> {}", label);
-        } else {
-            text.0 = format!("  {}", label);
-        }
+fn main_menu_confirm_selection(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    selected: Res<SelectedMenuEntry>,
+    mut next_state: ResMut<NextState<MainMenuState>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Enter) || keyboard_input.just_pressed(KeyCode::KeyZ) {
+        next_state.set(selected.selected);
     }
 }
+
+fn main_menu_reset_selection(
+    mut selected: ResMut<SelectedMenuEntry>,
+) {
+    selected.selected = MainMenuState::Quit;
+}
+
+fn main_menu_quit(
+    mut next_state: ResMut<NextState<MainMenuState>>,
+) {
+    next_state.set(MainMenuState::Quit);
+}
+
 
 pub struct GameUiPlugin;
 impl Plugin for GameUiPlugin {
@@ -270,6 +299,12 @@ impl Plugin for GameUiPlugin {
             .add_sub_state::<MainMenuState>()
             .add_systems(OnEnter(AppState::MainMenu), setup_main_menu)
             .add_systems(OnEnter(AppState::InGame), setup_in_game)
-            .add_systems(Update, main_menu_selection.run_if(in_state(AppState::MainMenu)));
+            .add_systems(Update, (
+                main_menu_selection,
+                main_menu_confirm_selection,
+                main_menu_update_texts.run_if(resource_changed::<SelectedMenuEntry>),
+                main_menu_reset_selection.run_if(input_just_pressed(KeyCode::KeyX)),
+                main_menu_quit.run_if(input_just_pressed(KeyCode::KeyQ)),
+            ).run_if(in_state(MainMenuState::Choosing)));
     }
 }

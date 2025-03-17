@@ -14,13 +14,16 @@ use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
 
 const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
-#[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 enum AppState {
+    #[default]
     MainMenu,
     InGame,
 }
-#[derive(States, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[source(AppState = AppState::InGame)]
 enum GameState {
+    #[default]
     Running,
     Paused,
 }
@@ -1183,7 +1186,7 @@ fn bullet_hit(
     }
 }
 
-fn item_hit_player(
+fn item_hit(
     mut commands: Commands,
     mut collision_events: EventReader<CollisionEvent>,
     players: Query<Entity, With<Player>>,
@@ -1545,8 +1548,6 @@ fn setup(
     commands.insert_resource(PlayerGraze(0));
     commands.insert_resource(PlayerPoints(0));
 
-    commands.set_state(AppState::MainMenu);
-
     let font_size = 40.0;
     let text_font = TextFont {
         font: font.clone(),
@@ -1744,43 +1745,56 @@ fn main() {
             enabled: false,
             ..default()
         })
+        .init_state::<AppState>()
+        .add_sub_state::<GameState>()
         .add_systems(Startup, setup)
-        .add_systems(Update, toggle_debug_render)
-        .add_systems(Update, spawn_enemies)
-        .add_systems(Update, laser_bullet)
-        .add_systems(Update, linear_movement)
         .add_systems(Update, auto_zoom_camera)
-        .add_systems(Update, bullet_hit.run_if(on_event::<CollisionEvent>))
-        .add_systems(Update, player_graze.run_if(on_event::<CollisionEvent>))
-        .add_systems(Update, item_hit_player.run_if(on_event::<CollisionEvent>))
-        .add_systems(Update, single_shoot)
-        .add_systems(Update, fan_shoot)
-        .add_systems(Update, update_lives_text.run_if(resource_changed::<PlayerLives>))
-        .add_systems(Update, update_bombs_text.run_if(resource_changed::<PlayerBombs>))
-        .add_systems(Update, update_powers_text.run_if(resource_changed::<PlayerPowers>))
-        .add_systems(Update, update_graze_text.run_if(resource_changed::<PlayerGraze>))
-        .add_systems(Update, update_points_text.run_if(resource_changed::<PlayerPoints>))
-        .add_systems(Update, player_shoot.run_if(input_pressed(KeyCode::KeyZ)))
+        .add_systems(Update, (
+            toggle_debug_render,
+            spawn_enemies,
+            laser_bullet,
+            linear_movement,
+            single_shoot,
+            fan_shoot,
+            tick_invincibility,
+            enemy_death_particles,
+            player_death_particles,
+            enemy_hit_particles,
+
+            player_shoot.run_if(input_pressed(KeyCode::KeyZ)),
+            show_judge_point.run_if(input_just_pressed(KeyCode::ShiftLeft)),
+            hide_judge_point.run_if(input_just_released(KeyCode::ShiftLeft)),
+            support_unit_focus.run_if(input_pressed(KeyCode::ShiftLeft)),
+            support_unit_reset.run_if(not(input_pressed(KeyCode::ShiftLeft))),
+
+            update_lives_text.run_if(resource_changed::<PlayerLives>),
+            update_bombs_text.run_if(resource_changed::<PlayerBombs>),
+            (
+                update_powers_text,
+                spawn_support_units,
+                despawn_support_units,
+            ).run_if(resource_changed::<PlayerPowers>),
+            update_graze_text.run_if(resource_changed::<PlayerGraze>),
+            update_points_text.run_if(resource_changed::<PlayerPoints>)
+
+        ))
+        .add_systems(Update, (
+            bullet_hit,
+            player_graze,
+            item_hit
+        ).run_if(on_event::<CollisionEvent>))
         .add_systems(Update, player_bomb.run_if(input_just_pressed(KeyCode::KeyX)))
-        .add_systems(Update, spawn_support_units.run_if(resource_changed::<PlayerPowers>))
-        .add_systems(Update, despawn_support_units.run_if(resource_changed::<PlayerPowers>))
-        .add_systems(Update, tick_invincibility)
-        .add_systems(Update, enemy_death_particles)
-        .add_systems(Update, player_death_particles)
-        .add_systems(Update, enemy_hit_particles)
-        .add_systems(Update, show_judge_point.run_if(input_just_pressed(KeyCode::ShiftLeft)))
-        .add_systems(Update, hide_judge_point.run_if(input_just_released(KeyCode::ShiftLeft)))
-        .add_systems(Update, support_unit_focus.run_if(input_pressed(KeyCode::ShiftLeft)))
-        .add_systems(Update, support_unit_reset.run_if(not(input_pressed(KeyCode::ShiftLeft))))
-        .add_systems(FixedUpdate, tick_cooldown_timer)
-        .add_systems(FixedUpdate, despawn_bullets)
-        .add_systems(FixedUpdate, despawn_items)
-        .add_systems(FixedUpdate, despawn_enemies)
-        .add_systems(FixedUpdate, clamp_player_position)
-        .add_systems(FixedUpdate, item_gravity)
-        .add_systems(FixedUpdate, homing_bullet)
-        .add_systems(FixedUpdate, spiral_bullet)
-        .add_systems(FixedUpdate, attract_items)
+        .add_systems(FixedUpdate, (
+            tick_cooldown_timer,
+            despawn_bullets,
+            despawn_items,
+            despawn_enemies,
+            clamp_player_position,
+            item_gravity,
+            homing_bullet,
+            spiral_bullet,
+            attract_items
+        ))
         .add_systems(
             RunFixedMainLoop,
             (

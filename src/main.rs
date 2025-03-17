@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ui;
+
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::color::palettes::tailwind::*;
@@ -12,13 +14,15 @@ use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
+use crate::ui::GameUiPlugin;
 
 const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 enum AppState {
-    // #[default]
-    MainMenu,
     #[default]
+    Loading,
+    MainMenu,
+    // #[default]
     InGame,
 }
 #[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default)]
@@ -1553,6 +1557,7 @@ fn resume_game(
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut app_state: ResMut<NextState<AppState>>,
 ) {
     let font = asset_server.load("font/UbuntuMono-R.ttf");
     commands.insert_resource(AsciiFont(font.clone()));
@@ -1569,13 +1574,10 @@ fn setup(
     commands.insert_resource(PlayerGraze(0));
     commands.insert_resource(PlayerPoints(0));
 
-    let font_size = 40.0;
-    let text_font = TextFont {
-        font: font.clone(),
-        font_size: font_size.clone(),
-        ..default()
-    };
-    let text_justification = JustifyText::Center;
+    commands.insert_resource(WindowSize {
+        width: 1280.0,
+        height: 720.0,
+    });
 
     commands.spawn((
         Camera2d,
@@ -1589,10 +1591,30 @@ fn setup(
             ..default()
         },
     ));
+    // audio
+    // let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
+    // commands.spawn(
+    //     AudioPlayer::new(a),
+    // );
+
+    app_state.set(AppState::MainMenu);
+}
+
+fn spawn_player(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+) {
+    let font_size = 40.0;
+    let text_font = TextFont {
+        font: font.0.clone(),
+        font_size: font_size.clone(),
+        ..default()
+    };
+
     commands.spawn((
         Text2d::new("@"),
         text_font.clone(),
-        TextLayout::new_with_justify(text_justification),
+        TextLayout::default(),
         TextColor(Color::Srgba(RED)),
 
         Player,
@@ -1612,9 +1634,9 @@ fn setup(
             JudgePoint,
             Text2d::new("·"),
             TextFont {
-               font: font.clone(),
-               font_size: 60.0,
-               ..default()
+                font: font.0.clone(),
+                font_size: 60.0,
+                ..default()
             },
             TextLayout::default(),
             TextColor(Color::Srgba(WHITE)),
@@ -1629,119 +1651,7 @@ fn setup(
             Sensor,
         ));
     });
-
-
-    let width = 1280.0;
-    let height = 720.0;
-
-    commands.insert_resource(WindowSize {
-        width,
-        height,
-    });
-
-    let horizontal_line = format!(
-        "+{}+{}+",
-        "-".repeat((width / font_size * 1.9 * 0.65 - 1.0).floor() as usize),
-        "-".repeat((width / font_size * 1.9 * 0.35).floor() as usize)
-    );
-    let vertical_margin = 20.0;
-
-    commands.spawn((
-        Text2d::new(horizontal_line.clone()),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(GRAY)),
-        Transform::from_translation(Vec3::new(0.0, height / 2.0 - vertical_margin, 1.0)),
-    ));
-    commands.spawn((
-        Text2d::new(horizontal_line.clone()),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(GRAY)),
-        Transform::from_translation(Vec3::new(0.0, -height / 2.0 + vertical_margin, 1.0)),
-    ));
-
-    let vertical_line = "|\n".repeat((height / font_size / 1.2).floor() as usize);
-    let horizontal_margin = 30.0;
-
-    commands.spawn((
-        Text2d::new(vertical_line.clone()),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(GRAY)),
-        Transform::from_translation(Vec3::new(width / 2.0 - horizontal_margin, 0.0, 1.0)),
-    ));
-    commands.spawn((
-        Text2d::new(vertical_line.clone()),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(GRAY)),
-        Transform::from_translation(Vec3::new(-width / 2.0 + horizontal_margin, 0.0, 1.0)),
-    ));
-    commands.spawn((
-        Text2d::new(vertical_line.clone()),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(GRAY)),
-        Transform::from_translation(Vec3::new(width / 2.0 * 0.219 + horizontal_margin, 0.0, 1.0)),
-    ));
-
-    let info_margin = width / 2.0 * 0.4;
-    commands.spawn((
-        Text2d::new(""),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(WHITE)),
-
-        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25, 1.0)),
-        PlayerLivesText,
-    ));
-    commands.spawn((
-        Text2d::new(""),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(WHITE)),
-
-        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 1.5, 1.0)),
-        PlayerBombsText,
-    ));
-
-    commands.spawn((
-        Text2d::new(""),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(WHITE)),
-
-        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 3.5, 1.0)),
-        PlayerPowersText,
-    ));
-    commands.spawn((
-        Text2d::new(""),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(WHITE)),
-
-        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 5.0, 1.0)),
-        PlayerGrazeText,
-    ));
-    commands.spawn((
-        Text2d::new(""),
-        text_font.clone(),
-        TextLayout::default(),
-        TextColor(Color::Srgba(WHITE)),
-
-        Transform::from_translation(Vec3::new(info_margin, height / 2.0 * 0.25 - font_size * 6.5, 1.0)),
-        PlayerPointsText,
-    ));
-
-    // audio
-    // let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
-    // commands.spawn(
-    //     AudioPlayer::new(a),
-    // );
-
 }
-
 
 fn main() {
     App::new()
@@ -1767,10 +1677,12 @@ fn main() {
             enabled: false,
             ..default()
         })
+        .add_plugins(GameUiPlugin)
         .init_state::<AppState>()
         .add_sub_state::<GameState>()
         .add_systems(Startup, setup)
         .add_systems(Update, auto_zoom_camera)
+        .add_systems(OnEnter(AppState::InGame), spawn_player)
         .add_systems(Update, pause_game
             .run_if(in_state(GameState::Running)
             .and(input_just_pressed(KeyCode::Escape))))

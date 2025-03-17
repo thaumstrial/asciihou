@@ -1,8 +1,7 @@
 use bevy::color::palettes::basic::{GRAY, WHITE};
-use bevy::input::common_conditions::{input_just_pressed, input_pressed};
-use bevy::input::keyboard::KeyboardInput;
+use bevy::input::common_conditions::{input_just_pressed};
 use bevy::prelude::*;
-use crate::{AppState, AsciiFont, GameState, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
+use crate::{AppState, AsciiFont, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
 
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[source(AppState = AppState::MainMenu)]
@@ -291,6 +290,14 @@ fn main_menu_quit(
     next_state.set(MainMenuState::Quit);
 }
 
+use bevy::app::AppExit;
+
+fn main_menu_handle_quit(
+    mut exit_writer: EventWriter<AppExit>,
+) {
+    exit_writer.send(AppExit::Success);
+}
+
 
 pub struct GameUiPlugin;
 impl Plugin for GameUiPlugin {
@@ -305,6 +312,7 @@ impl Plugin for GameUiPlugin {
                 main_menu_update_texts.run_if(resource_changed::<SelectedMenuEntry>),
                 main_menu_reset_selection.run_if(input_just_pressed(KeyCode::KeyX)),
                 main_menu_quit.run_if(input_just_pressed(KeyCode::KeyQ)),
-            ).run_if(in_state(MainMenuState::Choosing)));
+            ).run_if(in_state(MainMenuState::Choosing)))
+            .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit);
     }
 }

@@ -41,6 +41,25 @@ enum CharacterState {
     ReimuHakurei,
     MarisaKirisame,
 }
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(CharacterState = CharacterState::ReimuHakurei)]
+enum ReimuSpellCardState {
+    #[default]
+    SpellA,
+    SpellB,
+}
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(CharacterState = CharacterState::MarisaKirisame)]
+enum MarisaSpellCardState {
+    #[default]
+    SpellC,
+    SpellD,
+}
+#[derive(Resource)]
+struct SelectedSpellCard {
+    selected_index: usize,
+    repeat_timer: Timer,
+}
 #[derive(Resource)]
 struct SelectedCharacter {
     selected: CharacterState,
@@ -56,6 +75,14 @@ struct SelectedDifficulty {
     selected: DifficultyState,
     repeat_timer: Timer,
 }
+#[derive(Component)]
+struct ReimuSpellCardEntry;
+#[derive(Component)]
+struct MarisaSpellCardEntry;
+#[derive(Component)]
+struct SpellCardEntryIndex(usize);
+#[derive(Component)]
+struct SpellCardContainer;
 #[derive(Component)]
 struct MainMenuEntry(MainMenuState);
 #[derive(Component)]
@@ -120,7 +147,7 @@ fn setup_start(
                             for (entry, d) in difficulties {
                                 parent.spawn(
                                     Node {
-                                        left: Val::Px(font_size * 2.0),
+                                        // left: Val::Px(font_size * 2.0),
                                         ..default()
                                     }
                                 ).with_children(|parent| {
@@ -166,7 +193,7 @@ fn setup_start(
 
                     for (entry, label) in characters {
                         parent.spawn(Node {
-                            left: Val::Px(font_size * 2.0),
+                            // left: Val::Px(font_size * 2.0),
                             ..default()
                         }).with_children(|parent| {
                             parent.spawn((
@@ -182,27 +209,138 @@ fn setup_start(
             });
 
             parent
-                .spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    // justify_content: JustifyContent::FlexStart,
-                    // align_items: AlignItems::Center,
-                    width: Val::Percent(100.0),
-                    margin: UiRect {
-                        top: Val::Px(font_size),
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        // justify_content: JustifyContent::FlexStart,
+                        // align_items: AlignItems::Center,
+                        width: Val::Percent(100.0),
+                        margin: UiRect {
+                            top: Val::Px(font_size),
+                            ..default()
+                        },
                         ..default()
                     },
-                    ..default()
-                }).with_children(|parent| {
-                parent.spawn((
-                    Text::new("Spell Card:"),
-                    text_font.clone(),
-                    TextLayout::new_with_justify(JustifyText::Left),
-                    TextColor(Color::Srgba(WHITE)),
-                ));
-            });
+                    SpellCardContainer
+                )).with_children(|parent| {
+                    parent.spawn((
+                        Text::new("Spell Card:"),
+                        text_font.clone(),
+                        TextLayout::new_with_justify(JustifyText::Left),
+                        TextColor(Color::Srgba(WHITE)),
+                    ));
+                });
         });
 }
 
+fn setup_spell_cards(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+    selected_character: Res<SelectedCharacter>,
+    container: Query<Entity, With<SpellCardContainer>>,
+) {
+    let font_size = 40.0;
+    let text_font = TextFont {
+        font: font.0.clone(),
+        font_size,
+        ..default()
+    };
+
+    if let Ok(container_entity) = container.get_single() {
+        commands.entity(container_entity).with_children(|parent| {
+            match selected_character.selected {
+                CharacterState::ReimuHakurei => {
+                    let entries = vec![
+                        "[ ] Fantasy Orb",
+                        "[ ] Homing Amulet",
+                    ];
+                    for (index, label) in entries.into_iter().enumerate() {
+                        parent.spawn((
+                            StateScoped(StartState::SpellCard),
+                            ReimuSpellCardEntry,
+                            Text::new(label),
+                            text_font.clone(),
+                            TextLayout::default(),
+                            TextColor(Color::Srgba(WHITE)),
+                            SpellCardEntryIndex(index),
+                        ));
+                    }
+                }
+                CharacterState::MarisaKirisame => {
+                    let entries = vec![
+                        "[ ] Master Spark",
+                        "[ ] Stardust Reverie",
+                    ];
+                    for (index, label) in entries.into_iter().enumerate() {
+                        parent.spawn((
+                            StateScoped(StartState::SpellCard),
+                            MarisaSpellCardEntry,
+                            Text::new(label),
+                            text_font.clone(),
+                            TextLayout::default(),
+                            TextColor(Color::Srgba(WHITE)),
+                            SpellCardEntryIndex(index),
+                        ));
+                    }
+                }
+            }
+        });
+    }
+}
+
+fn spell_card_update_texts(
+    selected: Res<SelectedSpellCard>,
+    selected_character: Res<SelectedCharacter>,
+    mut reimu_texts: Query<(&SpellCardEntryIndex, &mut Text), (With<ReimuSpellCardEntry>, Without<MarisaSpellCardEntry>)>,
+    mut marisa_texts: Query<(&SpellCardEntryIndex, &mut Text), (With<MarisaSpellCardEntry>, Without<ReimuSpellCardEntry>)>,
+) {
+    if !selected.is_changed() {
+        return;
+    }
+
+    match selected_character.selected {
+        CharacterState::ReimuHakurei => {
+            for (index, mut text) in reimu_texts.iter_mut() {
+                let label = text.0.trim_start_matches(['[', 'X', ']', ' ']);
+                if index.0 == selected.selected_index {
+                    text.0 = format!("[X] {}", label);
+                } else {
+                    text.0 = format!("[ ] {}", label);
+                }
+            }
+        }
+        CharacterState::MarisaKirisame => {
+            for (index, mut text) in marisa_texts.iter_mut() {
+                let label = text.0.trim_start_matches(['[', 'X', ']', ' ']);
+                if index.0 == selected.selected_index {
+                    text.0 = format!("[X] {}", label);
+                } else {
+                    text.0 = format!("[ ] {}", label);
+                }
+            }
+        }
+    }
+}
+
+fn spell_card_selection(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut selected: ResMut<SelectedSpellCard>,
+    selected_character: Res<SelectedCharacter>,
+) {
+    let total = match selected_character.selected {
+        CharacterState::ReimuHakurei => 2,
+        CharacterState::MarisaKirisame => 2,
+    };
+
+    let direction = navigation_direction(&keyboard_input, &mut selected.repeat_timer, &time.delta());
+
+    if direction == 0 {
+        return;
+    }
+
+    selected.selected_index = ((selected.selected_index as isize + direction + total as isize) % total as isize) as usize;
+}
 fn setup_main_menu(
     mut commands: Commands,
     font: Res<AsciiFont>,
@@ -219,6 +357,11 @@ fn setup_main_menu(
 
     commands.insert_resource(SelectedCharacter {
         selected: CharacterState::ReimuHakurei,
+        repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+    });
+
+    commands.insert_resource(SelectedSpellCard {
+        selected_index: 0,
         repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
     });
 
@@ -392,6 +535,7 @@ fn setup_in_game(
     ));
 }
 
+
 fn difficulty_update_texts(
     selected: Res<SelectedDifficulty>,
     mut texts: Query<(&DifficultyEntry, &mut Text)>,
@@ -548,10 +692,30 @@ fn main_menu_selection(
 }
 
 fn character_confirm_selection(
+    selected: Res<SelectedCharacter>,
     mut next_state: ResMut<NextState<StartState>>,
+    mut next_state_reimu: ResMut<NextState<ReimuSpellCardState>>,
+    mut next_state_marisa: ResMut<NextState<MarisaSpellCardState>>,
 ) {
     next_state.set(StartState::SpellCard);
+    match selected.selected {
+        CharacterState::ReimuHakurei => next_state_reimu.set(ReimuSpellCardState::SpellA),
+        CharacterState::MarisaKirisame => next_state_marisa.set(MarisaSpellCardState::SpellC),
+    }
 }
+
+fn spell_card_confirm_selection(
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    next_state.set(AppState::InGame);
+}
+
+fn spell_card_quit(
+    mut next_state: ResMut<NextState<StartState>>,
+) {
+    next_state.set(StartState::Character);
+}
+
 
 fn difficulty_confirm_selection(
     mut next_state: ResMut<NextState<StartState>>,
@@ -613,9 +777,14 @@ impl Plugin for GameUiPlugin {
             .add_sub_state::<MainMenuState>()
             .add_sub_state::<StartState>()
             .add_sub_state::<DifficultyState>()
+            .add_sub_state::<CharacterState>()
+            .add_sub_state::<ReimuSpellCardState>()
+            .add_sub_state::<MarisaSpellCardState>()
             .enable_state_scoped_entities::<MainMenuState>()
+            .enable_state_scoped_entities::<StartState>()
             .add_systems(OnEnter(MainMenuState::Choosing), setup_main_menu)
             .add_systems(OnEnter(AppState::InGame), setup_in_game)
+            .add_systems(OnEnter(StartState::SpellCard), setup_spell_cards)
             .add_systems(Update, (
                 main_menu_selection,
                 main_menu_confirm_selection.run_if(confirm_key_just_pressed),
@@ -635,6 +804,12 @@ impl Plugin for GameUiPlugin {
                 character_confirm_selection.run_if(confirm_key_just_pressed),
                 character_quit.run_if(back_key_just_pressed),
             ).run_if(in_state(StartState::Character)))
+            .add_systems(Update, (
+                spell_card_selection,
+                spell_card_update_texts.run_if(resource_changed::<SelectedSpellCard>),
+                spell_card_confirm_selection.run_if(confirm_key_just_pressed),
+                spell_card_quit.run_if(back_key_just_pressed),
+            ).run_if(in_state(StartState::SpellCard)))
             .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)
             .add_systems(OnEnter(MainMenuState::Start), setup_start);
     }

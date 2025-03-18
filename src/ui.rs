@@ -29,7 +29,6 @@ enum StartState {
 #[source(StartState = StartState::Difficulty)]
 enum DifficultyState {
     #[default]
-    Choosing,
     Easy,
     Normal,
     Hard,
@@ -39,8 +38,13 @@ enum DifficultyState {
 #[source(StartState = StartState::Character)]
 enum CharacterState {
     #[default]
-    Reimu,
-    Marisa,
+    ReimuHakurei,
+    MarisaKirisame,
+}
+#[derive(Resource)]
+struct SelectedCharacter {
+    selected: CharacterState,
+    repeat_timer: Timer,
 }
 #[derive(Resource)]
 struct SelectedMenuEntry {
@@ -56,7 +60,8 @@ struct SelectedDifficulty {
 struct MainMenuEntry(MainMenuState);
 #[derive(Component)]
 struct DifficultyEntry(DifficultyState);
-
+#[derive(Component)]
+struct CharacterEntry(CharacterState);
 fn setup_start(
     mut commands: Commands,
     font: Res<AsciiFont>,
@@ -82,8 +87,8 @@ fn setup_start(
             parent
                 .spawn(Node {
                     flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::FlexStart,
-                    align_items: AlignItems::FlexStart,
+                    // justify_content: JustifyContent::FlexStart,
+                    // align_items: AlignItems::FlexStart,
                     width: Val::Percent(100.0),
                     margin: UiRect {
                         left: Val::Px(font_size),
@@ -134,8 +139,8 @@ fn setup_start(
             parent
                 .spawn(Node {
                     flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::FlexStart,
-                    align_items: AlignItems::Center,
+                    // justify_content: JustifyContent::FlexStart,
+                    // align_items: AlignItems::Center,
                     width: Val::Percent(100.0),
                     margin: UiRect {
                         top: Val::Px(font_size),
@@ -149,13 +154,38 @@ fn setup_start(
                     TextLayout::new_with_justify(JustifyText::Left),
                     TextColor(Color::Srgba(WHITE)),
                 ));
+
+                parent.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                }).with_children(|parent| {
+                    let characters = vec![
+                        (CharacterState::ReimuHakurei, "[X] Reimu Hakurei"),
+                        (CharacterState::MarisaKirisame, "[ ] Marisa Kirisame"),
+                    ];
+
+                    for (entry, label) in characters {
+                        parent.spawn(Node {
+                            left: Val::Px(font_size * 2.0),
+                            ..default()
+                        }).with_children(|parent| {
+                            parent.spawn((
+                                CharacterEntry(entry),
+                                Text::new(label),
+                                text_font.clone(),
+                                TextLayout::new_with_justify(JustifyText::Left),
+                                TextColor(Color::Srgba(WHITE)),
+                            ));
+                        });
+                    }
+                });
             });
 
             parent
                 .spawn(Node {
                     flex_direction: FlexDirection::Column,
-                    justify_content: JustifyContent::FlexStart,
-                    align_items: AlignItems::Center,
+                    // justify_content: JustifyContent::FlexStart,
+                    // align_items: AlignItems::Center,
                     width: Val::Percent(100.0),
                     margin: UiRect {
                         top: Val::Px(font_size),
@@ -184,6 +214,11 @@ fn setup_main_menu(
 
     commands.insert_resource(SelectedDifficulty {
         selected: DifficultyState::Easy,
+        repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+    });
+
+    commands.insert_resource(SelectedCharacter {
+        selected: CharacterState::ReimuHakurei,
         repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
     });
 
@@ -375,6 +410,24 @@ fn difficulty_update_texts(
     }
 }
 
+fn character_update_texts(
+    selected: Res<SelectedCharacter>,
+    mut texts: Query<(&CharacterEntry, &mut Text)>,
+) {
+    if !selected.is_changed() {
+        return;
+    }
+
+    for (entry, mut text) in texts.iter_mut() {
+        let label = text.0.trim_start_matches(['[', 'X', ']', ' ']);
+        if entry.0 == selected.selected {
+            text.0 = format!("[X] {}", label);
+        } else {
+            text.0 = format!("[ ] {}", label);
+        }
+    }
+}
+
 fn main_menu_update_texts(
     selected: Res<SelectedMenuEntry>,
     mut texts: Query<(&MainMenuEntry, &mut Text)>,
@@ -444,6 +497,26 @@ fn difficulty_selection(
     selected.selected = order[new_index as usize];
 }
 
+fn character_selection(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut selected: ResMut<SelectedCharacter>,
+) {
+    use CharacterState::*;
+
+    let order = [ReimuHakurei, MarisaKirisame];
+    let direction = navigation_direction(&keyboard_input, &mut selected.repeat_timer, &time.delta());
+
+    if direction == 0 {
+        return;
+    }
+
+    let current = selected.selected;
+    let current_index = order.iter().position(|s| *s == current).unwrap_or(0);
+    let new_index = (current_index as isize + direction + order.len() as isize) % order.len() as isize;
+    selected.selected = order[new_index as usize];
+}
+
 fn main_menu_selection(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -474,6 +547,12 @@ fn main_menu_selection(
     selected.selected = order[new_index as usize];
 }
 
+fn character_confirm_selection(
+    mut next_state: ResMut<NextState<StartState>>,
+) {
+    next_state.set(StartState::SpellCard);
+}
+
 fn difficulty_confirm_selection(
     mut next_state: ResMut<NextState<StartState>>,
 ) {
@@ -499,6 +578,11 @@ fn difficulty_quit(
     next_state.set(MainMenuState::Choosing);
 }
 
+fn character_quit(
+    mut next_state: ResMut<NextState<StartState>>
+) {
+    next_state.set(StartState::Difficulty);
+}
 
 fn main_menu_quit(
     mut next_state: ResMut<NextState<MainMenuState>>,
@@ -544,7 +628,13 @@ impl Plugin for GameUiPlugin {
                 difficulty_update_texts.run_if(resource_changed::<SelectedDifficulty>),
                 difficulty_confirm_selection.run_if(confirm_key_just_pressed),
                 difficulty_quit.run_if(back_key_just_pressed),
-            ).run_if(in_state(DifficultyState::Choosing)))
+            ).run_if(in_state(StartState::Difficulty)))
+            .add_systems(Update, (
+                character_selection,
+                character_update_texts.run_if(resource_changed::<SelectedCharacter>),
+                character_confirm_selection.run_if(confirm_key_just_pressed),
+                character_quit.run_if(back_key_just_pressed),
+            ).run_if(in_state(StartState::Character)))
             .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)
             .add_systems(OnEnter(MainMenuState::Start), setup_start);
     }

@@ -18,7 +18,7 @@ use crate::ui::GameUiPlugin;
 
 const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
-enum AppState {
+pub enum AppState {
     #[default]
     Loading,
     MainMenu,
@@ -27,7 +27,7 @@ enum AppState {
 }
 #[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default)]
 #[source(AppState = AppState::InGame)]
-enum GameState {
+pub enum GameState {
     #[default]
     Running,
     Paused,
@@ -1545,10 +1545,8 @@ fn pause_game(
 }
 
 fn resume_game(
-    mut next_state: ResMut<NextState<GameState>>,
     mut rapier_query: Query<&mut RapierConfiguration>,
 ) {
-    next_state.set(GameState::Running);
     if let Ok(mut rapier) = rapier_query.get_single_mut() {
         rapier.physics_pipeline_active = true;
     }
@@ -1680,15 +1678,12 @@ fn main() {
         .add_plugins(GameUiPlugin)
         .init_state::<AppState>()
         .add_sub_state::<GameState>()
+        .enable_state_scoped_entities::<GameState>()
         .add_systems(Startup, setup)
         .add_systems(Update, auto_zoom_camera)
         .add_systems(OnEnter(AppState::InGame), spawn_player)
-        .add_systems(Update, pause_game
-            .run_if(in_state(GameState::Running)
-            .and(input_just_pressed(KeyCode::Escape))))
-        .add_systems(Update, resume_game
-            .run_if(in_state(GameState::Paused)
-            .and(input_just_pressed(KeyCode::Enter))))
+        .add_systems(Update, pause_game.run_if(in_state(GameState::Running).and(input_just_pressed(KeyCode::Escape))))
+        .add_systems(OnExit(GameState::Paused), resume_game)
         .add_systems(Update, (
             toggle_debug_render,
             spawn_enemies,

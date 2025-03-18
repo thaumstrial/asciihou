@@ -1,7 +1,7 @@
 use bevy::color::palettes::basic::{GRAY, WHITE};
 use bevy::input::common_conditions::{input_just_pressed};
 use bevy::prelude::*;
-use crate::{AppState, AsciiFont, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
+use crate::{AppState, AsciiFont, GameState, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
 
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[source(AppState = AppState::MainMenu)]
@@ -42,6 +42,21 @@ enum CharacterState {
     MarisaKirisame,
 }
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(GameState = GameState::Paused)]
+enum PausedUiState {
+    #[default]
+    Choosing,
+    Resume,
+    ReturnToTitle,
+}
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[source(PausedUiState = PausedUiState::ReturnToTitle)]
+enum ConfirmReturnToTitleState {
+    #[default]
+    Confirm,
+    Cancel
+}
+#[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[source(CharacterState = CharacterState::ReimuHakurei)]
 enum ReimuSpellCardState {
     #[default]
@@ -54,6 +69,11 @@ enum MarisaSpellCardState {
     #[default]
     SpellC,
     SpellD,
+}
+#[derive(Resource)]
+struct SelectedPauseEntry {
+    selected: PausedUiState,
+    repeat_timer: Timer,
 }
 #[derive(Resource)]
 struct SelectedSpellCard {
@@ -88,21 +108,77 @@ struct CharacterContainer;
 #[derive(Component)]
 struct DifficultyContainer;
 #[derive(Component)]
+struct PausedContainer;
+#[derive(Component)]
 struct MainMenuEntry(MainMenuState);
 #[derive(Component)]
 struct DifficultyEntry(DifficultyState);
 #[derive(Component)]
 struct CharacterEntry(CharacterState);
-fn setup_start(
+#[derive(Component)]
+struct PausedEntry(PausedUiState);
+fn setup_paused(
     mut commands: Commands,
     font: Res<AsciiFont>,
 ) {
     let font_size = 40.0;
     let text_font = TextFont {
         font: font.0.clone(),
-        font_size: font_size.clone(),
+        font_size,
         ..default()
     };
+
+    commands.insert_resource(SelectedPauseEntry {
+        selected: PausedUiState::Resume,
+        repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+    });
+
+    commands.spawn((
+        StateScoped(GameState::Paused),
+        Node {
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            ..default()
+        },
+    ))
+        .with_children(|parent| {
+            parent.spawn((
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                PausedContainer,
+            ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        Text::new("Paused"),
+                        text_font.clone(),
+                        TextLayout::new_with_justify(JustifyText::Center),
+                        TextColor(Color::Srgba(WHITE)),
+                    ));
+
+                    let pause_entries = vec![
+                        (PausedUiState::Resume, "  Resume"),
+                        (PausedUiState::ReturnToTitle, "  Return to Title")
+                    ];
+                    for (entry, label) in pause_entries.into_iter() {
+                        parent.spawn((
+                            Text::new(label),
+                            text_font.clone(),
+                            TextLayout::new_with_justify(JustifyText::Left),
+                            TextColor(Color::Srgba(WHITE)),
+                            PausedEntry(entry),
+                        ));
+                    }
+                });
+        });
+}
+fn setup_start(
+    mut commands: Commands,
+) {
+    let font_size = 40.0;
 
     commands
         .spawn((
@@ -335,6 +411,24 @@ fn setup_spell_cards(
                 }
             }
         });
+    }
+}
+
+fn paused_update_texts(
+    selected: Res<SelectedPauseEntry>,
+    mut texts: Query<(&PausedEntry, &mut Text)>,
+) {
+    if !selected.is_changed()  {
+        return;
+    }
+
+    for (entry, mut text) in texts.iter_mut() {
+        let label = text.0.trim_start_matches(['>', ' ']);
+        if entry.0 == selected.selected {
+            text.0 = format!("> {}", label);
+        } else {
+            text.0 = format!("  {}", label);
+        }
     }
 }
 
@@ -590,10 +684,6 @@ fn difficulty_update_texts(
     selected: Res<SelectedDifficulty>,
     mut texts: Query<(&DifficultyEntry, &mut Text)>,
 ) {
-    if !selected.is_changed() {
-        return;
-    }
-
     for (entry, mut text) in texts.iter_mut() {
         let label = text.0.trim_start_matches(['[', 'X', ']', ' ']);
         if entry.0 == selected.selected {
@@ -608,10 +698,6 @@ fn character_update_texts(
     selected: Res<SelectedCharacter>,
     mut texts: Query<(&CharacterEntry, &mut Text)>,
 ) {
-    if !selected.is_changed() {
-        return;
-    }
-
     for (entry, mut text) in texts.iter_mut() {
         let label = text.0.trim_start_matches(['[', 'X', ']', ' ']);
         if entry.0 == selected.selected {
@@ -626,10 +712,6 @@ fn main_menu_update_texts(
     selected: Res<SelectedMenuEntry>,
     mut texts: Query<(&MainMenuEntry, &mut Text)>,
 ) {
-    if !selected.is_changed() {
-        return;
-    }
-
     for (entry, mut text) in texts.iter_mut() {
         let label = text.0.trim_start_matches(['>', ' ']);
         if entry.0 == selected.selected {
@@ -668,6 +750,24 @@ fn navigation_direction(
     }
 
     direction
+}
+
+fn paused_selection(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut selected: ResMut<SelectedPauseEntry>,
+) {
+    use PausedUiState::*;
+    let order = [Resume, ReturnToTitle];
+
+    let direction = navigation_direction(&keyboard_input, &mut selected.repeat_timer, &time.delta());
+    if direction == 0 {
+        return;
+    }
+
+    let current_index = order.iter().position(|s| *s == selected.selected).unwrap_or(0);
+    let new_index = (current_index as isize + direction + order.len() as isize) % order.len() as isize;
+    selected.selected = order[new_index as usize];
 }
 
 fn difficulty_selection(
@@ -741,6 +841,27 @@ fn main_menu_selection(
     selected.selected = order[new_index as usize];
 }
 
+fn paused_confirm_selection(
+    selected: Res<SelectedPauseEntry>,
+    mut next_game_state: ResMut<NextState<GameState>>,
+    mut next_paused_state: ResMut<NextState<PausedUiState>>,
+) {
+    match selected.selected {
+        PausedUiState::Resume => {
+            next_paused_state.set(PausedUiState::Resume);
+            next_game_state.set(GameState::Running);
+        },
+        PausedUiState::ReturnToTitle => {next_paused_state.set(PausedUiState::ReturnToTitle);}
+        _ => {}
+    }
+}
+fn paused_quit(
+    mut next_game_state: ResMut<NextState<GameState>>,
+    mut next_paused_state: ResMut<NextState<PausedUiState>>,
+) {
+    next_paused_state.set(PausedUiState::Resume);
+    next_game_state.set(GameState::Running);
+}
 fn character_confirm_selection(
     selected: Res<SelectedCharacter>,
     mut next_state: ResMut<NextState<StartState>>,
@@ -820,27 +941,6 @@ fn confirm_key_just_pressed(input: Res<ButtonInput<KeyCode>>) -> bool {
     input.just_pressed(KeyCode::KeyZ) || input.just_pressed(KeyCode::Enter)
 }
 
-fn update_start_ui_visibility(
-    start_state: Res<State<StartState>>,
-    mut difficulty_q: Query<&mut Visibility, With<DifficultyContainer>>,
-    mut character_q: Query<&mut Visibility, With<CharacterContainer>>,
-    mut spell_q: Query<&mut Visibility, With<SpellCardContainer>>,
-) {
-    let is_difficulty = *start_state == StartState::Difficulty;
-    let is_character = *start_state == StartState::Character;
-    let is_spell = *start_state == StartState::SpellCard;
-
-    if let Ok(mut vis) = difficulty_q.get_single_mut() {
-        *vis = if is_difficulty { Visibility::Visible } else { Visibility::Hidden };
-    }
-    if let Ok(mut vis) = character_q.get_single_mut() {
-        *vis = if is_character { Visibility::Visible } else { Visibility::Hidden };
-    }
-    if let Ok(mut vis) = spell_q.get_single_mut() {
-        *vis = if is_spell { Visibility::Visible } else { Visibility::Hidden };
-    }
-}
-
 pub struct GameUiPlugin;
 impl Plugin for GameUiPlugin {
     fn build(&self, app: &mut App) {
@@ -851,6 +951,7 @@ impl Plugin for GameUiPlugin {
             .add_sub_state::<CharacterState>()
             .add_sub_state::<ReimuSpellCardState>()
             .add_sub_state::<MarisaSpellCardState>()
+            .add_sub_state::<PausedUiState>()
             .enable_state_scoped_entities::<MainMenuState>()
             .enable_state_scoped_entities::<StartState>()
             .add_systems(OnEnter(MainMenuState::Choosing), setup_main_menu)
@@ -859,6 +960,7 @@ impl Plugin for GameUiPlugin {
             .add_systems(OnEnter(StartState::Difficulty), setup_difficulty)
             .add_systems(OnEnter(StartState::Character), setup_character)
             .add_systems(OnEnter(MainMenuState::Start), setup_start)
+            .add_systems(OnEnter(GameState::Paused), setup_paused)
             .add_systems(Update, (
                 main_menu_selection,
                 main_menu_confirm_selection.run_if(confirm_key_just_pressed),
@@ -884,6 +986,12 @@ impl Plugin for GameUiPlugin {
                 spell_card_confirm_selection.run_if(confirm_key_just_pressed),
                 spell_card_quit.run_if(back_key_just_pressed),
             ).run_if(in_state(StartState::SpellCard)))
+            .add_systems(Update, (
+                paused_selection,
+                paused_update_texts,
+                paused_confirm_selection.run_if(confirm_key_just_pressed),
+                paused_quit.run_if(back_key_just_pressed),
+            ).run_if(in_state(PausedUiState::Choosing)))
             .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)   ;
     }
 }

@@ -35,8 +35,9 @@ Power: number
 Graze: number
 Point: number
 ```
-## Pause
+## Paused
 ```
-Resume
-Return to Title
+    Paused
+> Resume
+  Return to Title
 ```

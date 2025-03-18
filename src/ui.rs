@@ -52,8 +52,8 @@ enum PausedUiState {
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[source(PausedUiState = PausedUiState::ReturnToTitle)]
 enum ConfirmReturnToTitleState {
-    #[default]
     Confirm,
+    #[default]
     Cancel
 }
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -69,6 +69,11 @@ enum MarisaSpellCardState {
     #[default]
     SpellC,
     SpellD,
+}
+#[derive(Resource)]
+struct SelectedConfirmReturnToTitleEntry {
+    selected: ConfirmReturnToTitleState,
+    repeat_timer: Timer,
 }
 #[derive(Resource)]
 struct SelectedPauseEntry {
@@ -110,6 +115,8 @@ struct DifficultyContainer;
 #[derive(Component)]
 struct PausedContainer;
 #[derive(Component)]
+struct ConfirmReturnToTitleContainer;
+#[derive(Component)]
 struct MainMenuEntry(MainMenuState);
 #[derive(Component)]
 struct DifficultyEntry(DifficultyState);
@@ -117,6 +124,16 @@ struct DifficultyEntry(DifficultyState);
 struct CharacterEntry(CharacterState);
 #[derive(Component)]
 struct PausedEntry(PausedUiState);
+#[derive(Component)]
+struct ConfirmReturnToTitleEntry(ConfirmReturnToTitleState);
+fn cleanup_confirm_return_to_title(
+    mut commands: Commands,
+    confirm_container: Query<Entity, With<ConfirmReturnToTitleContainer>>,
+) {
+    if let Ok(entity) = confirm_container.get_single() {
+        commands.entity(entity).despawn_descendants();
+    }
+}
 fn setup_paused(
     mut commands: Commands,
     font: Res<AsciiFont>,
@@ -172,9 +189,23 @@ fn setup_paused(
                             PausedEntry(entry),
                         ));
                     }
+
+                    parent.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            flex_direction: FlexDirection::Column,
+                            margin: UiRect {
+                                top: Val::Px(font_size * 4.0),
+                                ..default()
+                            },
+                            ..default()
+                        },
+                        ConfirmReturnToTitleContainer,
+                    ));
                 });
         });
 }
+
 fn setup_start(
     mut commands: Commands,
 ) {
@@ -431,7 +462,23 @@ fn paused_update_texts(
         }
     }
 }
+fn confirm_return_to_title_update_texts(
+    selected: Res<SelectedConfirmReturnToTitleEntry>,
+    mut texts: Query<(&ConfirmReturnToTitleEntry, &mut Text)>,
+) {
+    if !selected.is_changed() {
+        return;
+    }
 
+    for (entry, mut text) in texts.iter_mut() {
+        let label = text.0.trim_start_matches(['>', ' ']);
+        if entry.0 == selected.selected {
+            text.0 = format!("> {}", label);
+        } else {
+            text.0 = format!("  {}", label);
+        }
+    }
+}
 fn spell_card_update_texts(
     selected: Res<SelectedSpellCard>,
     selected_character: Res<SelectedCharacter>,
@@ -484,6 +531,51 @@ fn spell_card_selection(
     }
 
     selected.selected_index = ((selected.selected_index as isize + direction + total as isize) % total as isize) as usize;
+}
+fn setup_confirm_return_to_title(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+    container: Query<Entity, With<ConfirmReturnToTitleContainer>>,
+) {
+    if let Ok(entity) = container.get_single() {
+        commands.entity(entity).despawn_descendants();
+    }
+
+    let font_size = 40.0;
+    let text_font = TextFont {
+        font: font.0.clone(),
+        font_size,
+        ..default()
+    };
+
+    commands.insert_resource(SelectedConfirmReturnToTitleEntry {
+        selected: ConfirmReturnToTitleState::Cancel,
+        repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+    });
+
+    if let Ok(container_entity) = container.get_single() {
+        commands.entity(container_entity).with_children(|parent| {
+            parent.spawn((
+                Text::new("Return to Title?"),
+                text_font.clone(),
+                TextLayout::new_with_justify(JustifyText::Left),
+                TextColor(Color::Srgba(WHITE)),
+            ));
+            let entries = vec![
+                (ConfirmReturnToTitleState::Confirm, "  Yes"),
+                (ConfirmReturnToTitleState::Cancel, "  No"),
+            ];
+            for (entry, label) in entries {
+                parent.spawn((
+                    ConfirmReturnToTitleEntry(entry),
+                    Text::new(label),
+                    text_font.clone(),
+                    TextLayout::new_with_justify(JustifyText::Center),
+                    TextColor(Color::Srgba(WHITE)),
+                ));
+            }
+        });
+    }
 }
 fn setup_main_menu(
     mut commands: Commands,
@@ -568,7 +660,7 @@ fn setup_main_menu(
         });
 }
 
-fn setup_in_game(
+fn setup_in_game_ui(
     mut commands: Commands,
     font: Res<AsciiFont>,
     window: Res<WindowSize>,
@@ -591,6 +683,7 @@ fn setup_in_game(
     let vertical_margin = 20.0;
 
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(horizontal_line.clone()),
         text_font.clone(),
         TextLayout::default(),
@@ -598,6 +691,7 @@ fn setup_in_game(
         Transform::from_translation(Vec3::new(0.0, height / 2.0 - vertical_margin, 1.0)),
     ));
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(horizontal_line.clone()),
         text_font.clone(),
         TextLayout::default(),
@@ -609,6 +703,7 @@ fn setup_in_game(
     let horizontal_margin = 30.0;
 
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(vertical_line.clone()),
         text_font.clone(),
         TextLayout::default(),
@@ -616,6 +711,7 @@ fn setup_in_game(
         Transform::from_translation(Vec3::new(width / 2.0 - horizontal_margin, 0.0, 1.0)),
     ));
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(vertical_line.clone()),
         text_font.clone(),
         TextLayout::default(),
@@ -623,6 +719,7 @@ fn setup_in_game(
         Transform::from_translation(Vec3::new(-width / 2.0 + horizontal_margin, 0.0, 1.0)),
     ));
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(vertical_line.clone()),
         text_font.clone(),
         TextLayout::default(),
@@ -632,6 +729,7 @@ fn setup_in_game(
 
     let info_margin = width / 2.0 * 0.4;
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
@@ -641,6 +739,7 @@ fn setup_in_game(
         PlayerLivesText,
     ));
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
@@ -651,6 +750,7 @@ fn setup_in_game(
     ));
 
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
@@ -660,6 +760,7 @@ fn setup_in_game(
         PlayerPowersText,
     ));
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
@@ -669,6 +770,7 @@ fn setup_in_game(
         PlayerGrazeText,
     ));
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new(""),
         text_font.clone(),
         TextLayout::default(),
@@ -790,7 +892,23 @@ fn difficulty_selection(
     let new_index = (current_index as isize + direction + order.len() as isize) % order.len() as isize;
     selected.selected = order[new_index as usize];
 }
+fn confirm_return_to_title_selection(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut selected: ResMut<SelectedConfirmReturnToTitleEntry>,
+) {
+    use ConfirmReturnToTitleState::*;
+    let order = [Confirm, Cancel];
 
+    let direction = navigation_direction(&keyboard_input, &mut selected.repeat_timer, &time.delta());
+    if direction == 0 {
+        return;
+    }
+
+    let current_index = order.iter().position(|s| *s == selected.selected).unwrap_or(0);
+    let new_index = (current_index as isize + direction + order.len() as isize) % order.len() as isize;
+    selected.selected = order[new_index as usize];
+}
 fn character_selection(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -855,6 +973,22 @@ fn paused_confirm_selection(
         _ => {}
     }
 }
+fn confirm_return_to_title_confirm_selection(
+    selected: Res<SelectedConfirmReturnToTitleEntry>,
+    mut next_app_state: ResMut<NextState<AppState>>,
+    mut next_main_menu_state: ResMut<NextState<MainMenuState>>,
+    mut next_paused_state: ResMut<NextState<PausedUiState>>,
+) {
+    match selected.selected {
+        ConfirmReturnToTitleState::Confirm => {
+            next_app_state.set(AppState::MainMenu);
+            next_main_menu_state.set(MainMenuState::Choosing);
+        }
+        ConfirmReturnToTitleState::Cancel => {
+            next_paused_state.set(PausedUiState::Choosing);
+        }
+    }
+}
 fn paused_quit(
     mut next_game_state: ResMut<NextState<GameState>>,
     mut next_paused_state: ResMut<NextState<PausedUiState>>,
@@ -885,6 +1019,12 @@ fn spell_card_quit(
     mut next_state: ResMut<NextState<StartState>>,
 ) {
     next_state.set(StartState::Character);
+}
+
+fn confirm_return_to_title_quit(
+    mut next_paused_state: ResMut<NextState<PausedUiState>>,
+) {
+    next_paused_state.set(PausedUiState::Choosing);
 }
 
 
@@ -952,15 +1092,19 @@ impl Plugin for GameUiPlugin {
             .add_sub_state::<ReimuSpellCardState>()
             .add_sub_state::<MarisaSpellCardState>()
             .add_sub_state::<PausedUiState>()
+            .add_sub_state::<ConfirmReturnToTitleState>()
             .enable_state_scoped_entities::<MainMenuState>()
             .enable_state_scoped_entities::<StartState>()
+            .enable_state_scoped_entities::<ConfirmReturnToTitleState>()
             .add_systems(OnEnter(MainMenuState::Choosing), setup_main_menu)
-            .add_systems(OnEnter(AppState::InGame), setup_in_game)
+            .add_systems(OnEnter(AppState::InGame), setup_in_game_ui)
             .add_systems(OnEnter(StartState::SpellCard), setup_spell_cards)
             .add_systems(OnEnter(StartState::Difficulty), setup_difficulty)
             .add_systems(OnEnter(StartState::Character), setup_character)
             .add_systems(OnEnter(MainMenuState::Start), setup_start)
             .add_systems(OnEnter(GameState::Paused), setup_paused)
+            .add_systems(OnEnter(PausedUiState::ReturnToTitle), setup_confirm_return_to_title)
+            .add_systems(OnExit(PausedUiState::ReturnToTitle), cleanup_confirm_return_to_title)
             .add_systems(Update, (
                 main_menu_selection,
                 main_menu_confirm_selection.run_if(confirm_key_just_pressed),
@@ -992,6 +1136,12 @@ impl Plugin for GameUiPlugin {
                 paused_confirm_selection.run_if(confirm_key_just_pressed),
                 paused_quit.run_if(back_key_just_pressed),
             ).run_if(in_state(PausedUiState::Choosing)))
+            .add_systems(Update, (
+                confirm_return_to_title_selection,
+                confirm_return_to_title_update_texts,
+                confirm_return_to_title_confirm_selection.run_if(confirm_key_just_pressed),
+                confirm_return_to_title_quit.run_if(back_key_just_pressed),
+            ).run_if(in_state(PausedUiState::ReturnToTitle)))
             .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)   ;
     }
 }

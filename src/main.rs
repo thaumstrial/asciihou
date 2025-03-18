@@ -470,6 +470,7 @@ fn single_shoot(
             let spawn_pos = transform.translation();
 
             let mut bullet_entity = commands.spawn((
+                StateScoped(AppState::InGame),
                 shoot.bullet.to_bundle(),
                 Transform::from_translation(spawn_pos),
                 Velocity::linear(shoot.velocity),
@@ -530,6 +531,7 @@ fn fan_shoot(
             let direction = Vec2::from_angle(angle_rad).rotate(base_direction);
 
             let mut bullet_entity = commands.spawn((
+                StateScoped(AppState::InGame),
                 shoot.bullet.to_bundle(),
                 Transform::from_translation(transform.translation()),
                 Velocity::linear(direction),
@@ -583,6 +585,7 @@ fn spawn_support_units(
 
         for (original_offset, focus_offset) in offsets {
             commands.spawn((
+                StateScoped(AppState::InGame),
                 SupportUnit {
                     original_position: original_offset,
                     focus_position: focus_offset,
@@ -701,6 +704,8 @@ fn spawn_enemies(
                 LinearMovement(movement_vec),
                 Health((rand::random::<u32>() % 10 + 1) as i32),
             ));
+            enemy_entity.insert(StateScoped(AppState::InGame));
+
 
             let bullet_rand = rand::random::<f32>();
             let shoot_rand = rand::random::<f32>();
@@ -980,6 +985,7 @@ fn bullet_hit(
 
                         if let Ok((_, _, bullet_transform)) = bullets.get(bullet_entity) {
                             commands.spawn((
+                                StateScoped(AppState::InGame),
                                 EnemyHitParticle(Timer::from_seconds(0.5, TimerMode::Once)),
                                 Text2d::new(random_char),
                                 TextFont {
@@ -1005,6 +1011,7 @@ fn bullet_hit(
                             for _ in 0..power_count {
 
                                 commands.spawn((
+                                    StateScoped(AppState::InGame),
                                     PowerItem,
 
                                     Sprite::from_color(Color::Srgba(RED_400), Vec2::new(20.0, 20.0)),
@@ -1036,6 +1043,7 @@ fn bullet_hit(
                             let point_count = rand::random::<u32>() % 3 + 1;
                             for _ in 0..point_count {
                                 commands.spawn((
+                                    StateScoped(AppState::InGame),
                                     PointItem,
 
                                     Sprite::from_color(Color::Srgba(BLUE_400), Vec2::new(20.0, 20.0)),
@@ -1072,6 +1080,7 @@ fn bullet_hit(
                                 let dir = Vec2::from_angle(angle) * speed;
 
                                 commands.spawn((
+                                    StateScoped(AppState::InGame),
                                     EnemyDeathParticle(Timer::from_seconds(rand::random::<f32>() * 2.0 + 1.0, TimerMode::Once)),
                                     Text2d::new(char),
                                     TextFont {
@@ -1124,6 +1133,7 @@ fn bullet_hit(
                             let dir = Vec2::from_angle(angle) * speed;
 
                             commands.spawn((
+                                StateScoped(AppState::InGame),
                                 PowerItem,
                                 Sprite::from_color(Color::Srgba(RED_400), Vec2::new(20.0, 20.0)),
                                 Transform::from_translation(player_pos.extend(-1.0)),
@@ -1160,6 +1170,7 @@ fn bullet_hit(
                             let dir = Vec2::from_angle(angle) * speed;
 
                             commands.spawn((
+                                StateScoped(AppState::InGame),
                                 PlayerDeathParticle(Timer::from_seconds(rand::random::<f32>() * 1.5 + 2.0, TimerMode::Once)),
                                 Text2d::new(hex_str),
                                 TextFont {
@@ -1398,6 +1409,7 @@ fn player_shoot(
                 let rotated_direction = Vec2::from_angle(angle_rad).rotate(BASE_DIRECTION);
 
                 commands.spawn((
+                    StateScoped(AppState::InGame),
                     BulletTarget::Enemy,
 
                     Transform::from_translation(transform.translation),
@@ -1557,20 +1569,19 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut app_state: ResMut<NextState<AppState>>,
 ) {
+    commands.insert_resource(EnemySpawnTimer {
+        timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+    });
+    commands.insert_resource(PlayerLives(2));
+    commands.insert_resource(PlayerBombs(3));
+    commands.insert_resource(PlayerPowers(0));
+    commands.insert_resource(PlayerGraze(0));
+    commands.insert_resource(PlayerPoints(0));
+
     let font = asset_server.load("font/UbuntuMono-R.ttf");
     commands.insert_resource(AsciiFont(font.clone()));
 
     commands.insert_resource(ShowColliderDebug(false));
-    commands.insert_resource(EnemySpawnTimer {
-        timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-    });
-
-    commands.insert_resource(PlayerLives(2));
-    commands.insert_resource(PlayerBombs(3));
-
-    commands.insert_resource(PlayerPowers(0));
-    commands.insert_resource(PlayerGraze(0));
-    commands.insert_resource(PlayerPoints(0));
 
     commands.insert_resource(WindowSize {
         width: 1280.0,
@@ -1598,10 +1609,19 @@ fn setup(
     app_state.set(AppState::MainMenu);
 }
 
-fn spawn_player(
+fn setup_game(
     mut commands: Commands,
     font: Res<AsciiFont>,
 ) {
+    commands.insert_resource(EnemySpawnTimer {
+        timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+    });
+    commands.insert_resource(PlayerLives(2));
+    commands.insert_resource(PlayerBombs(3));
+    commands.insert_resource(PlayerPowers(0));
+    commands.insert_resource(PlayerGraze(0));
+    commands.insert_resource(PlayerPoints(0));
+
     let font_size = 40.0;
     let text_font = TextFont {
         font: font.0.clone(),
@@ -1610,6 +1630,7 @@ fn spawn_player(
     };
 
     commands.spawn((
+        StateScoped(AppState::InGame),
         Text2d::new("@"),
         text_font.clone(),
         TextLayout::default(),
@@ -1678,10 +1699,11 @@ fn main() {
         .add_plugins(GameUiPlugin)
         .init_state::<AppState>()
         .add_sub_state::<GameState>()
+        .enable_state_scoped_entities::<AppState>()
         .enable_state_scoped_entities::<GameState>()
         .add_systems(Startup, setup)
         .add_systems(Update, auto_zoom_camera)
-        .add_systems(OnEnter(AppState::InGame), spawn_player)
+        .add_systems(OnEnter(AppState::InGame), setup_game)
         .add_systems(Update, pause_game.run_if(in_state(GameState::Running).and(input_just_pressed(KeyCode::Escape))))
         .add_systems(OnExit(GameState::Paused), resume_game)
         .add_systems(Update, (

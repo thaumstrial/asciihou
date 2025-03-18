@@ -84,6 +84,10 @@ struct SpellCardEntryIndex(usize);
 #[derive(Component)]
 struct SpellCardContainer;
 #[derive(Component)]
+struct CharacterContainer;
+#[derive(Component)]
+struct DifficultyContainer;
+#[derive(Component)]
 struct MainMenuEntry(MainMenuState);
 #[derive(Component)]
 struct DifficultyEntry(DifficultyState);
@@ -112,101 +116,37 @@ fn setup_start(
             }))
         .with_children(|parent| {
             parent
-                .spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    // justify_content: JustifyContent::FlexStart,
-                    // align_items: AlignItems::FlexStart,
-                    width: Val::Percent(100.0),
-                    margin: UiRect {
-                        left: Val::Px(font_size),
-                        top: Val::Px(font_size),
-                        ..default()
-                    },
-                    ..default()
-                })
-                .with_children(|parent| {
-                    parent.spawn((
-                        Text::new("Difficulty:"),
-                        text_font.clone(),
-                        TextLayout::new_with_justify(JustifyText::Left),
-                        TextColor(Color::Srgba(WHITE)),
-                    ));
-                    parent
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        // justify_content: JustifyContent::FlexStart,
+                        // align_items: AlignItems::FlexStart,
+                        width: Val::Percent(100.0),
+                        margin: UiRect {
+                            left: Val::Px(font_size),
+                            top: Val::Px(font_size),
                             ..default()
-                        })
-                        .with_children(|parent| {
-                            let difficulties = vec![
-                                (DifficultyState::Easy, "[X] Easy"),
-                                (DifficultyState::Normal, "[ ] Normal"),
-                                (DifficultyState::Hard, "[ ] Hard"),
-                                (DifficultyState::Lunatic, "[ ] Lunatic"),
-                            ];
-
-                            for (entry, d) in difficulties {
-                                parent.spawn(
-                                    Node {
-                                        // left: Val::Px(font_size * 2.0),
-                                        ..default()
-                                    }
-                                ).with_children(|parent| {
-                                    parent.spawn((
-                                        DifficultyEntry(entry),
-                                        Text::new(d),
-                                        text_font.clone(),
-                                        TextLayout::new_with_justify(JustifyText::Left),
-                                        TextColor(Color::Srgba(WHITE)),
-                                    ));
-                                });
-                            }
-                        });
-                });
-
-            parent
-                .spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    // justify_content: JustifyContent::FlexStart,
-                    // align_items: AlignItems::Center,
-                    width: Val::Percent(100.0),
-                    margin: UiRect {
-                        top: Val::Px(font_size),
+                        },
                         ..default()
                     },
-                    ..default()
-            }).with_children(|parent| {
-                parent.spawn((
-                    Text::new("Character:"),
-                    text_font.clone(),
-                    TextLayout::new_with_justify(JustifyText::Left),
-                    TextColor(Color::Srgba(WHITE)),
+                    DifficultyContainer
                 ));
 
-                parent.spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    ..default()
-                }).with_children(|parent| {
-                    let characters = vec![
-                        (CharacterState::ReimuHakurei, "[X] Reimu Hakurei"),
-                        (CharacterState::MarisaKirisame, "[ ] Marisa Kirisame"),
-                    ];
-
-                    for (entry, label) in characters {
-                        parent.spawn(Node {
-                            // left: Val::Px(font_size * 2.0),
+            parent
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        // justify_content: JustifyContent::FlexStart,
+                        // align_items: AlignItems::Center,
+                        width: Val::Percent(100.0),
+                        margin: UiRect {
+                            top: Val::Px(font_size),
                             ..default()
-                        }).with_children(|parent| {
-                            parent.spawn((
-                                CharacterEntry(entry),
-                                Text::new(label),
-                                text_font.clone(),
-                                TextLayout::new_with_justify(JustifyText::Left),
-                                TextColor(Color::Srgba(WHITE)),
-                            ));
-                        });
-                    }
-                });
-            });
+                        },
+                        ..default()
+                    },
+                    CharacterContainer,
+                ));
 
             parent
                 .spawn((
@@ -222,17 +162,119 @@ fn setup_start(
                         ..default()
                     },
                     SpellCardContainer
-                )).with_children(|parent| {
-                    parent.spawn((
-                        Text::new("Spell Card:"),
-                        text_font.clone(),
-                        TextLayout::new_with_justify(JustifyText::Left),
-                        TextColor(Color::Srgba(WHITE)),
-                    ));
-                });
+                ));
         });
 }
+fn setup_character(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+    character_container: Query<Entity, With<CharacterContainer>>,
+    spell_card_container: Query<Entity, With<SpellCardContainer>>,
+) {
+    if let Ok(entity) = character_container.get_single() {
+        commands.entity(entity).despawn_descendants();
+    }
+    if let Ok(entity) = spell_card_container.get_single() {
+        commands.entity(entity).despawn_descendants();
+    }
 
+    let font_size = 40.0;
+    let text_font = TextFont {
+        font: font.0.clone(),
+        font_size,
+        ..default()
+    };
+
+    if let Ok(container_entity) = character_container.get_single() {
+        commands.entity(container_entity).with_children(|parent| {
+            parent.spawn((
+                Text::new("Character:"),
+                text_font.clone(),
+                TextLayout::new_with_justify(JustifyText::Left),
+                TextColor(Color::Srgba(WHITE)),
+            ));
+
+            parent.spawn(Node {
+                flex_direction: FlexDirection::Column,
+                ..default()
+            }).with_children(|parent| {
+                let characters = vec![
+                    (CharacterState::ReimuHakurei, "[ ] Reimu Hakurei"),
+                    (CharacterState::MarisaKirisame, "[ ] Marisa Kirisame"),
+                ];
+
+                for (entry, label) in characters {
+                    parent.spawn(Node { ..default() }).with_children(|parent| {
+                        parent.spawn((
+                            CharacterEntry(entry),
+                            Text::new(label),
+                            text_font.clone(),
+                            TextLayout::new_with_justify(JustifyText::Left),
+                            TextColor(Color::Srgba(WHITE)),
+                        ));
+                    });
+                }
+            });
+        });
+    }
+}
+fn setup_difficulty(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+    difficulty_container: Query<Entity, With<DifficultyContainer>>,
+    character_container: Query<Entity, With<CharacterContainer>>,
+) {
+    if let Ok(entity) = difficulty_container.get_single() {
+        commands.entity(entity).despawn_descendants();
+    }
+    if let Ok(entity) = character_container.get_single() {
+        commands.entity(entity).despawn_descendants();
+    }
+
+    let font_size = 40.0;
+    let text_font = TextFont {
+        font: font.0.clone(),
+        font_size,
+        ..default()
+    };
+
+    if let Ok(container_entity) = difficulty_container.get_single() {
+        commands.entity(container_entity).with_children(|parent| {
+            parent.spawn((
+                Text::new("Difficulty:"),
+                text_font.clone(),
+                TextLayout::new_with_justify(JustifyText::Left),
+                TextColor(Color::Srgba(WHITE)),
+            ));
+
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                })
+                .with_children(|parent| {
+                    let difficulties = vec![
+                        (DifficultyState::Easy, "[ ] Easy"),
+                        (DifficultyState::Normal, "[ ] Normal"),
+                        (DifficultyState::Hard, "[ ] Hard"),
+                        (DifficultyState::Lunatic, "[ ] Lunatic"),
+                    ];
+
+                    for (entry, label) in difficulties {
+                        parent.spawn(Node { ..default() }).with_children(|parent| {
+                            parent.spawn((
+                                DifficultyEntry(entry),
+                                Text::new(label),
+                                text_font.clone(),
+                                TextLayout::new_with_justify(JustifyText::Left),
+                                TextColor(Color::Srgba(WHITE)),
+                            ));
+                        });
+                    }
+                });
+        });
+    }
+}
 fn setup_spell_cards(
     mut commands: Commands,
     font: Res<AsciiFont>,
@@ -248,6 +290,14 @@ fn setup_spell_cards(
 
     if let Ok(container_entity) = container.get_single() {
         commands.entity(container_entity).with_children(|parent| {
+            parent.spawn((
+                StateScoped(StartState::SpellCard),
+                Text::new("Spell Card:"),
+                text_font.clone(),
+                TextLayout::new_with_justify(JustifyText::Left),
+                TextColor(Color::Srgba(WHITE)),
+            ));
+
             match selected_character.selected {
                 CharacterState::ReimuHakurei => {
                     let entries = vec![
@@ -770,6 +820,27 @@ fn confirm_key_just_pressed(input: Res<ButtonInput<KeyCode>>) -> bool {
     input.just_pressed(KeyCode::KeyZ) || input.just_pressed(KeyCode::Enter)
 }
 
+fn update_start_ui_visibility(
+    start_state: Res<State<StartState>>,
+    mut difficulty_q: Query<&mut Visibility, With<DifficultyContainer>>,
+    mut character_q: Query<&mut Visibility, With<CharacterContainer>>,
+    mut spell_q: Query<&mut Visibility, With<SpellCardContainer>>,
+) {
+    let is_difficulty = *start_state == StartState::Difficulty;
+    let is_character = *start_state == StartState::Character;
+    let is_spell = *start_state == StartState::SpellCard;
+
+    if let Ok(mut vis) = difficulty_q.get_single_mut() {
+        *vis = if is_difficulty { Visibility::Visible } else { Visibility::Hidden };
+    }
+    if let Ok(mut vis) = character_q.get_single_mut() {
+        *vis = if is_character { Visibility::Visible } else { Visibility::Hidden };
+    }
+    if let Ok(mut vis) = spell_q.get_single_mut() {
+        *vis = if is_spell { Visibility::Visible } else { Visibility::Hidden };
+    }
+}
+
 pub struct GameUiPlugin;
 impl Plugin for GameUiPlugin {
     fn build(&self, app: &mut App) {
@@ -785,6 +856,9 @@ impl Plugin for GameUiPlugin {
             .add_systems(OnEnter(MainMenuState::Choosing), setup_main_menu)
             .add_systems(OnEnter(AppState::InGame), setup_in_game)
             .add_systems(OnEnter(StartState::SpellCard), setup_spell_cards)
+            .add_systems(OnEnter(StartState::Difficulty), setup_difficulty)
+            .add_systems(OnEnter(StartState::Character), setup_character)
+            .add_systems(OnEnter(MainMenuState::Start), setup_start)
             .add_systems(Update, (
                 main_menu_selection,
                 main_menu_confirm_selection.run_if(confirm_key_just_pressed),
@@ -810,7 +884,6 @@ impl Plugin for GameUiPlugin {
                 spell_card_confirm_selection.run_if(confirm_key_just_pressed),
                 spell_card_quit.run_if(back_key_just_pressed),
             ).run_if(in_state(StartState::SpellCard)))
-            .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)
-            .add_systems(OnEnter(MainMenuState::Start), setup_start);
+            .add_systems(OnEnter(MainMenuState::Quit), main_menu_handle_quit)   ;
     }
 }

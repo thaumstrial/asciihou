@@ -1,7 +1,7 @@
-use bevy::color::palettes::basic::{GRAY, WHITE};
+use bevy::color::palettes::basic::*;
 use bevy::input::common_conditions::{input_just_pressed};
 use bevy::prelude::*;
-use crate::{AppState, AsciiFont, GameState, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
+use crate::{AppState, AsciiBoldFont, AsciiFont, GameState, MainMenuAsciiMarisa, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
 
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[source(AppState = AppState::MainMenu)]
@@ -580,6 +580,8 @@ fn setup_confirm_return_to_title(
 fn setup_main_menu(
     mut commands: Commands,
     font: Res<AsciiFont>,
+    bold_font: Res<AsciiBoldFont>,
+    ascii_art: Res<MainMenuAsciiMarisa>,
 ) {
     commands.insert_resource(SelectedMenuEntry {
         selected: MainMenuState::Start,
@@ -607,6 +609,29 @@ fn setup_main_menu(
         font_size: font_size.clone(),
         ..default()
     };
+
+    let ascii_position = Vec3::new(- font_size * 6.0, 0.0, 10.0);
+    let layers = vec![
+        (ascii_art.black.clone(), PURPLE_200),
+        (ascii_art.white.clone(), WHITE),
+        (ascii_art.yellow.clone(), YELLOW_200),
+        (ascii_art.skin.clone(), PINK_200),
+    ];
+
+    for (ascii_str, color) in layers {
+        commands.spawn((
+            StateScoped(MainMenuState::Choosing),
+            Text2d::new(ascii_str),
+            TextFont {
+                font: bold_font.0.clone(),
+                font_size: 16.0,
+                ..default()
+            },
+            TextLayout::default(),
+            TextColor::from(color),
+            Transform::from_translation(ascii_position),
+        ));
+    }
 
     commands
         .spawn((
@@ -1066,6 +1091,8 @@ fn main_menu_quit(
 }
 
 use bevy::app::AppExit;
+use bevy::color::palettes::css::PINK;
+use bevy::color::palettes::tailwind::*;
 
 fn main_menu_handle_quit(
     mut exit_writer: EventWriter<AppExit>,

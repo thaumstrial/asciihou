@@ -184,7 +184,16 @@ struct SupportUnit {
     focus_position: Vec3,
 }
 #[derive(Resource)]
-struct AsciiFont(Handle<Font>);
+pub struct MainMenuAsciiMarisa {
+    pub black: String,
+    pub skin: String,
+    pub white   : String,
+    pub yellow: String,
+}
+#[derive(Resource)]
+pub struct AsciiFont(Handle<Font>);
+#[derive(Resource)]
+pub struct AsciiBoldFont(Handle<Font>);
 #[derive(Resource)]
 struct ShowColliderDebug(bool);
 #[derive(Resource)]
@@ -1564,11 +1573,23 @@ fn resume_game(
     }
 }
 
+fn load_ascii_art(path: &str, section: &str) -> String {
+    let full_path = format!("{}/{}.txt", path, section);
+    std::fs::read_to_string(full_path).unwrap_or_default().replace("\r", "")
+}
+
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut app_state: ResMut<NextState<AppState>>,
 ) {
+    commands.insert_resource(MainMenuAsciiMarisa {
+        black: load_ascii_art("assets/ascii/main_menu/marisa", "black"),
+        skin: load_ascii_art("assets/ascii/main_menu/marisa", "skin") ,
+        white: load_ascii_art("assets/ascii/main_menu/marisa", "white") ,
+        yellow: load_ascii_art("assets/ascii/main_menu/marisa", "yellow"),
+    });
+
     commands.insert_resource(EnemySpawnTimer {
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
     });
@@ -1580,6 +1601,9 @@ fn setup(
 
     let font = asset_server.load("font/UbuntuMono-R.ttf");
     commands.insert_resource(AsciiFont(font.clone()));
+
+    let bold_font = asset_server.load("font/UbuntuMono-B.ttf");
+    commands.insert_resource(AsciiBoldFont(bold_font.clone()));
 
     commands.insert_resource(ShowColliderDebug(false));
 

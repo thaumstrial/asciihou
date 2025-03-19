@@ -1,7 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod ui;
-
+use asciihou::ui::GameUiPlugin;
+use asciihou::state::GameState;
+use asciihou::resource::{AsciiBoldFont, AsciiFont};
+use asciihou::ui::{PlayerGrazeText, PlayerPointsText};
+use asciihou::ui::{PlayerBombsText, PlayerPowersText};
+use asciihou::ui::PlayerLivesText;
+use asciihou::resource::WindowSize;
+use asciihou::state::AppState;
+use asciihou::ascii_animation::AsciiAnimationPlugin;
 use bevy::asset::{AssetMetaCheck, AssetServer};
 use bevy::color::palettes::css::*;
 use bevy::color::palettes::tailwind::*;
@@ -14,24 +21,8 @@ use bevy::window::{PresentMode, WindowResized};
 use bevy_rapier2d::prelude::*;
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::bloom::BloomPrefilter;
-use crate::ui::GameUiPlugin;
 
 const PLAYER_RESPAWN_POS: Vec3 = Vec3::new(-200.0, -250.0, 0.0);
-#[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum AppState {
-    #[default]
-    Loading,
-    MainMenu,
-    // #[default]
-    InGame,
-}
-#[derive(SubStates, Debug, Clone, PartialEq, Eq, Hash, Default)]
-#[source(AppState = AppState::InGame)]
-pub enum GameState {
-    #[default]
-    Running,
-    Paused,
-}
 #[derive(Component, Clone)]
 enum BulletTarget {
     Player,
@@ -161,49 +152,22 @@ struct FanShoot {
     cooldown: Timer,
     times: i32,
 }
-
 #[derive(Component)]
-struct PlayerLivesText;
+pub struct PowerItem;
 #[derive(Component)]
-struct PlayerBombsText;
+pub struct PointItem;
 #[derive(Component)]
-struct PlayerPowersText;
-#[derive(Component)]
-struct PlayerPointsText;
-#[derive(Component)]
-struct PlayerGrazeText;
-#[derive(Component)]
-struct PowerItem;
-#[derive(Component)]
-struct PointItem;
-#[derive(Component)]
-struct Invincible(pub Timer);
+pub struct Invincible(pub Timer);
 #[derive(Component)]
 struct SupportUnit {
     original_position: Vec3,
     focus_position: Vec3,
 }
 #[derive(Resource)]
-pub struct MainMenuAsciiMarisa {
-    pub black: String,
-    pub skin: String,
-    pub white   : String,
-    pub yellow: String,
-}
-#[derive(Resource)]
-pub struct AsciiFont(Handle<Font>);
-#[derive(Resource)]
-pub struct AsciiBoldFont(Handle<Font>);
-#[derive(Resource)]
 struct ShowColliderDebug(bool);
 #[derive(Resource)]
 struct EnemySpawnTimer {
     timer: Timer,
-}
-#[derive(Resource, Clone, Copy)]
-struct WindowSize {
-    width: f32,
-    height: f32,
 }
 #[derive(Resource)]
 struct PlayerLives(pub i32);
@@ -1573,22 +1537,11 @@ fn resume_game(
     }
 }
 
-fn load_ascii_art(path: &str, section: &str) -> String {
-    let full_path = format!("{}/{}.txt", path, section);
-    std::fs::read_to_string(full_path).unwrap_or_default().replace("\r", "")
-}
-
 fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut app_state: ResMut<NextState<AppState>>,
 ) {
-    commands.insert_resource(MainMenuAsciiMarisa {
-        black: load_ascii_art("assets/ascii/main_menu/marisa", "black"),
-        skin: load_ascii_art("assets/ascii/main_menu/marisa", "skin") ,
-        white: load_ascii_art("assets/ascii/main_menu/marisa", "white") ,
-        yellow: load_ascii_art("assets/ascii/main_menu/marisa", "yellow"),
-    });
 
     commands.insert_resource(EnemySpawnTimer {
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
@@ -1720,7 +1673,10 @@ fn main() {
             enabled: false,
             ..default()
         })
-        .add_plugins(GameUiPlugin)
+        .add_plugins((
+            GameUiPlugin,
+            AsciiAnimationPlugin
+        ))
         .init_state::<AppState>()
         .add_sub_state::<GameState>()
         .enable_state_scoped_entities::<AppState>()

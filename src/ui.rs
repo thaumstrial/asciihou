@@ -1,8 +1,21 @@
+use crate::resource::WindowSize;
+use crate::resource::{AsciiBoldFont, AsciiFont};
+use crate::state::AppState;
+use crate::state::GameState;
 use bevy::color::palettes::basic::*;
 use bevy::input::common_conditions::{input_just_pressed};
 use bevy::prelude::*;
-use crate::{AppState, AsciiBoldFont, AsciiFont, GameState, MainMenuAsciiMarisa, PlayerBombsText, PlayerGrazeText, PlayerLivesText, PlayerPointsText, PlayerPowersText, WindowSize};
 
+#[derive(Component)]
+pub struct PlayerLivesText;
+#[derive(Component)]
+pub struct PlayerBombsText;
+#[derive(Component)]
+pub struct PlayerPowersText;
+#[derive(Component)]
+pub struct PlayerPointsText;
+#[derive(Component)]
+pub struct PlayerGrazeText;
 #[derive(SubStates, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[source(AppState = AppState::MainMenu)]
 enum MainMenuState {
@@ -581,8 +594,11 @@ fn setup_main_menu(
     mut commands: Commands,
     font: Res<AsciiFont>,
     bold_font: Res<AsciiBoldFont>,
-    ascii_art: Res<MainMenuAsciiMarisa>,
+    main_menu_animation: Res<MainMenuAnimation>,
+    animation_assets: Res<Assets<AsciiAnimationAsset>>,
 ) {
+    spawn_ascii_animation(&mut commands, animation_assets.get(&main_menu_animation.0).unwrap(), &font.0, 40.0, Transform::from_translation(Vec3::ZERO));
+
     commands.insert_resource(SelectedMenuEntry {
         selected: MainMenuState::Start,
         repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
@@ -610,28 +626,7 @@ fn setup_main_menu(
         ..default()
     };
 
-    let ascii_position = Vec3::new(- font_size * 6.0, 0.0, 10.0);
-    let layers = vec![
-        (ascii_art.black.clone(), PURPLE_200),
-        (ascii_art.white.clone(), WHITE),
-        (ascii_art.yellow.clone(), YELLOW_200),
-        (ascii_art.skin.clone(), PINK_200),
-    ];
-
-    for (ascii_str, color) in layers {
-        commands.spawn((
-            StateScoped(MainMenuState::Choosing),
-            Text2d::new(ascii_str),
-            TextFont {
-                font: bold_font.0.clone(),
-                font_size: 16.0,
-                ..default()
-            },
-            TextLayout::default(),
-            TextColor::from(color),
-            Transform::from_translation(ascii_position),
-        ));
-    }
+    // let ascii_position = Vec3::new(- font_size * 6.0, 0.0, 10.0);
 
     commands
         .spawn((
@@ -1093,6 +1088,7 @@ fn main_menu_quit(
 use bevy::app::AppExit;
 use bevy::color::palettes::css::PINK;
 use bevy::color::palettes::tailwind::*;
+use crate::ascii_animation::{spawn_ascii_animation, AsciiAnimationAsset, MainMenuAnimation};
 
 fn main_menu_handle_quit(
     mut exit_writer: EventWriter<AppExit>,

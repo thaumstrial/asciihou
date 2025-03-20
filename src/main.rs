@@ -1578,15 +1578,12 @@ fn setup(
         },
     ));
     // audio
-    // let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
-    // commands.spawn(
-    //     AudioPlayer::new(a),
-    // );
 
     app_state.set(AppState::MainMenu);
 }
 
 fn setup_game(
+    asset_server: Res<AssetServer>,
     mut commands: Commands,
     font: Res<AsciiFont>,
 ) {
@@ -1647,6 +1644,11 @@ fn setup_game(
             Sensor,
         ));
     });
+
+    // let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
+    // commands.spawn(
+    //     AudioPlayer::new(a),
+    // );
 }
 
 fn main() {

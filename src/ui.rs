@@ -597,10 +597,10 @@ fn setup_main_menu(
     main_menu_animation: Res<MainMenuAnimation>,
     animation_assets: Res<Assets<AsciiAnimationAsset>>,
 ) {
-    let animation_entity = spawn_ascii_animation(&mut commands, animation_assets.get(&main_menu_animation.0).unwrap(), &font.0, 40.0, Transform::from_translation(Vec3::ZERO));
-    commands.entity(animation_entity).insert(
-        StateScoped(MainMenuState::Choosing),
-    );
+    // let animation_entity = spawn_ascii_animation(&mut commands, animation_assets.get(&main_menu_animation.0).unwrap(), &font.0, 40.0, Transform::from_translation(Vec3::ZERO));
+    // commands.entity(animation_entity).insert(
+    //     StateScoped(MainMenuState::Choosing),
+    // );
     commands.insert_resource(SelectedMenuEntry {
         selected: MainMenuState::Start,
         repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),
@@ -653,12 +653,12 @@ fn setup_main_menu(
                .with_children(|parent| {
                    let menu_items = vec![
                        (MainMenuState::Start, "> Start"),
-                       (MainMenuState::ExtraStart, "  Extra Start"),
-                       (MainMenuState::PracticeStart, "  Practice Start"),
-                       (MainMenuState::Replay, "  Replay"),
-                       (MainMenuState::Score, "  Score"),
-                       (MainMenuState::MusicRoom, "  Music Room"),
-                       (MainMenuState::Option, "  Option"),
+                       // (MainMenuState::ExtraStart, "  Extra Start"),
+                       // (MainMenuState::PracticeStart, "  Practice Start"),
+                       // (MainMenuState::Replay, "  Replay"),
+                       // (MainMenuState::Score, "  Score"),
+                       // (MainMenuState::MusicRoom, "  Music Room"),
+                       // (MainMenuState::Option, "  Option"),
                        (MainMenuState::Quit, "  Quit"),
                    ];
 
@@ -1059,8 +1059,22 @@ fn difficulty_confirm_selection(
 fn main_menu_confirm_selection(
     selected: Res<SelectedMenuEntry>,
     mut next_state: ResMut<NextState<MainMenuState>>,
+    mut next_app_state: ResMut<NextState<AppState>>,
 ) {
     next_state.set(selected.selected);
+    match selected.selected {
+        MainMenuState::Choosing => {}
+        MainMenuState::Start => {
+            next_app_state.set(AppState::InGame);
+        }
+        MainMenuState::ExtraStart => {}
+        MainMenuState::PracticeStart => {}
+        MainMenuState::Replay => {}
+        MainMenuState::Score => {}
+        MainMenuState::MusicRoom => {}
+        MainMenuState::Option => {}
+        MainMenuState::Quit => {}
+    }
 }
 
 fn main_menu_reset_selection(

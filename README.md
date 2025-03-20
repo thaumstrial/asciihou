@@ -9,7 +9,7 @@ rustup target install wasm32-unknown-unknown
 ```
 
 ```sh
-cargo run --target wasm32-unknown-unknown
+ cargo build --release --target wasm32-unknown-unknown
 ```
 
 ```sh

@@ -5,7 +5,7 @@ use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::ORANGE;
 use bevy::prelude::*;
 use bevy::text::cosmic_text::ttf_parser::Weight;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Component)]
@@ -14,11 +14,11 @@ pub struct AsciiChar {
 }
 #[derive(Component)]
 pub struct AsciiAnimation {
-    frames: Vec<(char, Color)>,
-    current_frame: usize,
-    frame_num: usize,
-    frame_size: UVec2,
-    frame_time: Timer,
+    pub frames: Vec<(char, Color)>,
+    pub current_frame: usize,
+    pub frame_num: usize,
+    pub frame_size: UVec2,
+    pub frame_time: Timer,
 }
 impl AsciiAnimation {
     pub fn get_ascii_char_at(&self, pos: &UVec2) -> (char, Color) {
@@ -27,10 +27,10 @@ impl AsciiAnimation {
 }
 
 #[derive(Default)]
-struct AsciiAnimationLoader;
+pub struct AsciiAnimationLoader;
 #[non_exhaustive]
 #[derive(Error, Debug)]
-enum CustomAssetLoaderError {
+pub enum CustomAssetLoaderError {
     /// An [IO](std::io) Error
     #[error("Could not load asset: {0}")]
     Io(#[from] std::io::Error),
@@ -59,7 +59,7 @@ impl AssetLoader for AsciiAnimationLoader {
     }
 }
 
-#[derive(Asset, Deserialize, TypePath)]
+#[derive(Asset, Deserialize, Serialize, TypePath)]
 pub struct AsciiAnimationAsset {
     pub frames: Vec<(char, String)>,
     pub frame_size: UVec2,
@@ -77,7 +77,7 @@ fn color_from_hex(hex: &str) -> Color {
 #[derive(Resource)]
 pub struct MainMenuAnimation(pub Handle<AsciiAnimationAsset>);
 impl AsciiAnimationAsset {
-    fn get_component(&self) -> AsciiAnimation {
+    pub fn get_component(&self) -> AsciiAnimation {
         let frames: Vec<(char, Color)> = self.frames
             .iter()
             .map(|(ch,hex)| (*ch, color_from_hex(hex)))

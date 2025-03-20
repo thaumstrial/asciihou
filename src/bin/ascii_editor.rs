@@ -2,13 +2,20 @@ use bevy::color::palettes::basic::WHITE;
 use bevy::ecs::event::EventCursor;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
-use asciihou::ascii_animation::AsciiAnimationPlugin;
-use asciihou::resource::AsciiFont;
+use bevy::render::mesh::CylinderAnchor::Bottom;
+use bevy::text::cosmic_text::Motion::Up;
+use asciihou::ascii_animation::{spawn_ascii_animation, AsciiAnimation, AsciiAnimationAsset, AsciiAnimationLoader, AsciiAnimationPlugin, AsciiChar, MainMenuAnimation};
+use asciihou::resource::{AsciiBoldFont, AsciiFont};
 
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
-
+#[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub enum EditorState {
+    #[default]
+    Loading,
+    MainMenu,
+}
 #[derive(Resource, Default)]
 struct ColorInput {
     value: String,
@@ -45,15 +52,11 @@ struct CharSample{
     ch: char,
     color: Color
 }
-
-struct Cell {
-    ch: char,
-    color: String, // "#rrggbb"
+#[derive(Component)]
+struct EditAsciiAnimation {
+    animation: AsciiAnimation,
+    playing: bool
 }
-struct AsciiFrame {
-    cells: Vec<Cell>, // width * height
-}
-
 fn parse_hex_color(hex: &str) -> Result<Color, ()> {
     if hex.len() != 6 {
         return Err(());
@@ -235,14 +238,21 @@ fn char_input(
         }
     }
 }
+#[derive(Resource)]
+struct AnimationToEdit(Handle<AsciiAnimationAsset>);
 fn setup(
   mut commands: Commands,
   asset_server: Res<AssetServer>,
+  mut next_state: ResMut<NextState<EditorState>>,
 ) {
+
     commands.spawn(Camera2d::default());
     let font = asset_server.load("font/UbuntuMono-R.ttf");
     commands.insert_resource(AsciiFont(font.clone()));
     let font_size = 40.0;
+
+    let animation: Handle<AsciiAnimationAsset> = asset_server.load("ascii/animation/test.ron");
+    commands.insert_resource(AnimationToEdit(animation));
 
     commands.spawn(Node {
         width: Val::Percent(100.0),
@@ -387,6 +397,8 @@ fn setup(
             ));
         });
     });
+
+    next_state.set(EditorState::MainMenu);
 }
 
 fn color_input(
@@ -443,6 +455,105 @@ fn update_brush_sample(
         }
     }
 }
+fn load_animation(
+    mut commands: Commands,
+    font: Res<AsciiFont>,
+    animation: Res<AnimationToEdit>,
+    animation_assets: Res<Assets<AsciiAnimationAsset>>,
+) {
+    let animation_asset = animation_assets.get(&animation.0).unwrap();
+    let font_size = 40.0;
+    let char_width = font_size * 0.6;
+    let char_height = font_size;
+    let frame_size = animation_asset.frame_size;
+    let animation_component = animation_asset.get_component();
+
+    let offset_x = -((frame_size.x as f32) * char_width) / 2.0;
+    let offset_y = ((frame_size.y as f32) * char_height) / 2.0;
+
+    let mut parent_entity = commands.spawn((
+        Transform::from(Transform::from_translation(Vec3::ZERO)),
+        InheritedVisibility::default(),
+    ));
+
+    parent_entity.with_children(|parent| {
+        for x in 0..frame_size.x {
+            for y in 0..frame_size.y {
+                let pos = UVec2::new(x, y);
+                let (ch, color) = animation_component.get_ascii_char_at(&pos);
+                let pos_x = x as f32 * char_width + offset_x;
+                let pos_y = -(y as f32 * char_height) + offset_y;
+
+                parent.spawn((
+                    Text2d::new(ch.to_string()),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size,
+                        ..default()
+                    },
+                    AsciiChar { pos },
+                    TextLayout::new_with_justify(JustifyText::Center),
+                    Transform::from_translation(Vec3::new(pos_x, pos_y, 0.0)),
+                    TextColor(color),
+                ));
+            }
+        }
+    });
+
+    parent_entity.insert(EditAsciiAnimation {
+        animation: animation_component,
+        playing: false
+    });
+}
+fn editor_play_ascii_animation(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut animation_query: Query<(&Children, &mut EditAsciiAnimation)>,
+    mut ascii_chars: Query<(&AsciiChar, &mut Text2d, &mut TextColor)>,
+) {
+    for (children, mut animation) in animation_query.iter_mut() {
+        let mut frame_changed = false;
+
+        if keyboard_input.just_pressed(KeyCode::Space) {
+            animation.playing = !animation.playing;
+        }
+
+        if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+            animation.playing = false;
+            animation.animation.current_frame = (animation.animation.current_frame + 1) % animation.animation.frame_num;
+            frame_changed = true;
+        }
+
+        if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+            animation.playing = false;
+            if animation.animation.current_frame == 0 {
+                animation.animation.current_frame = animation.animation.frame_num - 1;
+            } else {
+                animation.animation.current_frame -= 1;
+            }
+            frame_changed = true;
+        }
+
+        if animation.playing {
+            animation.animation.frame_time.tick(time.delta());
+            if animation.animation.frame_time.just_finished() {
+                animation.animation.current_frame = (animation.animation.current_frame + 1) % animation.animation.frame_num;
+                frame_changed = true;
+            }
+        }
+
+        if frame_changed {
+            for &child in children.iter() {
+                if let Ok((ascii_char, mut text, mut text_color)) = ascii_chars.get_mut(child) {
+                    let (ch, color) = animation.animation.get_ascii_char_at(&ascii_char.pos);
+                    text.0 = ch.to_string();
+                    text_color.0 = color;
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -450,12 +561,15 @@ fn main() {
         .init_resource::<ColorInput>()
         .init_resource::<Brush>()
         .init_resource::<CharInput>()
+        .init_state::<EditorState>()
         .add_systems(Startup, setup)
+        .add_systems(OnEnter(EditorState::MainMenu), load_animation)
         .add_systems(Update, (
             button_system,
             color_input,
             char_input,
             update_brush_sample.run_if(resource_changed::<Brush>),
+            editor_play_ascii_animation,
         ))
         .run();
 }

@@ -105,7 +105,7 @@ pub fn spawn_ascii_animation(
     font: &Handle<Font>,
     font_size: f32,
     transform: Transform,
-) {
+) -> Entity {
     let char_width = font_size * 0.6;
     let char_height = font_size;
     let frame_size = animation_asset.frame_size;
@@ -117,9 +117,9 @@ pub fn spawn_ascii_animation(
     let mut parent_entity = commands.spawn((
         Transform::from(transform),
         InheritedVisibility::default(),
-    ));
+    )).id();
 
-    parent_entity.with_children(|parent| {
+    commands.entity(parent_entity).with_children(|parent| {
         for x in 0..frame_size.x {
             for y in 0..frame_size.y {
                 let pos = UVec2::new(x, y);
@@ -143,7 +143,8 @@ pub fn spawn_ascii_animation(
         }
     });
 
-    parent_entity.insert(animation_component);
+    commands.entity(parent_entity).insert(animation_component);
+    parent_entity
 }
 fn play_ascii_animation(
     time: Res<Time>,

@@ -597,8 +597,10 @@ fn setup_main_menu(
     main_menu_animation: Res<MainMenuAnimation>,
     animation_assets: Res<Assets<AsciiAnimationAsset>>,
 ) {
-    spawn_ascii_animation(&mut commands, animation_assets.get(&main_menu_animation.0).unwrap(), &font.0, 40.0, Transform::from_translation(Vec3::ZERO));
-
+    let animation_entity = spawn_ascii_animation(&mut commands, animation_assets.get(&main_menu_animation.0).unwrap(), &font.0, 40.0, Transform::from_translation(Vec3::ZERO));
+    commands.entity(animation_entity).insert(
+        StateScoped(MainMenuState::Choosing),
+    );
     commands.insert_resource(SelectedMenuEntry {
         selected: MainMenuState::Start,
         repeat_timer: Timer::from_seconds(0.15, TimerMode::Repeating),

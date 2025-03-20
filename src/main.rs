@@ -1645,10 +1645,10 @@ fn setup_game(
         ));
     });
 
-    // let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
-    // commands.spawn(
-    //     AudioPlayer::new(a),
-    // );
+    let a: Handle<AudioSource> = asset_server.load("audio/Character-Encoding-Initiation.ogg");
+    commands.spawn(
+        AudioPlayer::new(a),
+    );
 }
 
 fn main() {
